@@ -1,0 +1,155 @@
+#!/usr/bin/perl 
+
+use strict;
+use warnings;
+use Getopt::Long qw(:config bundling);
+use Data::Dumper;
+
+my %opts;
+my %files;
+
+GetOptions(
+	"var-code|v=s"		=> \@{ $opts{vars} },
+	"var-literal|l=s"		=> \@{ $opts{vars_literal} },
+	"unique|u"			=> \$opts{unique},
+	#"var-numeric|n=s"		=> \@{ $opts{vars_numeric} },
+	"mdf|m=s"		=> \$opts{mdf},
+	"sort|s=s"		=> \$opts{sort}
+) or usage();
+
+
+usage() if ( !@ARGV );
+usage() if ( !@{ $opts{vars} } && !@{ $opts{vars_literal} });
+
+$opts{sort} //= $opts{vars}->[0];
+$opts{sort} //= $opts{vars_literal}->[0];
+$opts{sort} =~ s/=.*$//;
+
+my %seen;
+FILE: foreach my $file (@ARGV)
+{
+	my %vars;
+	
+	foreach my $var_regex (@{ $opts{vars} })
+	{
+		my ( $var, $regex ) = split(/=/, $var_regex);
+		my $val;
+
+		if ( $file =~ /$regex/ && $1 ) 
+		{
+			$val = $1;
+
+			# skip to the next file if already seen:
+			next FILE if ($opts{unique} && $seen{$val});
+
+			$seen{$val}++;
+			if ( $val =~ s/[A-Z]/./i )
+			{
+				$vars{$var} = $val;
+			}
+			elsif ( $val =~ s/^(\d+)(\d)$/$1/ ) 
+			{
+				$vars{$var} = $1 * (10 ** $2);
+			}
+			else 
+			{
+				warn "$file: unknown value code $val";
+			}
+		}
+		else 
+		{
+			warn "$file: Does not match regex $regex for $var.";
+		}
+	}
+
+	foreach my $var_regex (@{ $opts{vars_literal} })
+	{
+		my ( $var, $regex ) = split(/,/, $var_regex);
+		my $val;
+
+		if ( $file =~ /$regex/ && $1 ) 
+		{
+			$vars{$var} = $1;
+		}
+
+	}
+
+	if ( !defined($vars{$opts{sort}}) ) 
+	{
+		die "$file: no sort column found for $opts{sort}";
+	}
+
+	
+	$files{$file} = \%vars;
+}
+
+my $idx = 0;
+foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files ) 
+{
+	my $c = read_file($file);
+	
+	$c =~ s/!.*?\r?\n//g;
+	my $pound;
+	if ($c =~ s/(#.*?\r?\n)//)
+	{
+		$pound = $1;
+	}
+	print "! $file\n";
+
+	foreach my $var ( keys(%{ $files{$file} }) )
+	{
+		my $f = $file;
+		$f =~ s/.*\///;
+		$f =~ s/.s2p//i;
+		#print "VAR $var=\"x$files{$file}{$var}x\"\n"; 
+		print "VAR $var=\"$idx. $files{$file}{$var} $f\"\n"; 
+		
+		$idx++;
+	}
+
+	print "BEGIN ACDATA\n";
+	#print "%F  n11x   n11y  n21x  n21y  n12x  n12y n22x  n22y\n";
+	print "$pound";
+	print "% F S[1,1](Complex) S[2,1](Complex) S[1,2](Complex) S[2,2](Complex)\n";
+	print "$c";
+	print "\n" if ($c !~ /\n$/s);
+
+	print "END\n\n";
+
+}
+
+#print Dumper(\%files);
+
+exit 0;
+
+sub usage
+{
+	print "$0 [--unique] --var-(literal|code) 'var_name=MODEL-(...)\.s2p' [--var ...] file1.s2p [file2...] > mymdf.mdf\n";
+	print "   --var-code specifies the variable to be assigned and a regular
+	expression to match the capacitance code (or other unit): NNX or NRN. X is
+	the exponent, N is a numeric value. A-Z is typically used by
+	manufacturers to indicate the decimal point.
+
+	Above (...) matches the code or literal to be placed in the MDF variable.  If
+	a capacitor code is 111 then it will calculate 11*10^1 == 110 pF.
+	A code of 1N4 or 14N would be 1.4 or 14.0, respectively.
+	
+	The --var-literal version does not parse the code.
+	
+	--unique will choose only the first matching code if multiple of the same code are found.
+		
+	Output is written to STDOUT so redirect into your .mdf file\n";
+
+	exit 1;
+}
+
+sub read_file
+{
+	my $fn = shift;
+	local $/ = undef;
+	open(my $in, $fn) or die "$!: $fn";
+
+	my $content = <$in>;
+	close($in);
+	return $content;
+}
