@@ -5,6 +5,7 @@ use strict;
 
 use JSON;
 use LWP::UserAgent;
+use Digest::MD5 qw(md5_hex);
 
 use Data::Dumper;
 
@@ -94,7 +95,7 @@ sub new
 {
 	my ($class, %args) = @_;
 
-	return bless({}, $class);
+	return bless(\%args, $class);
 }
 
 sub octo_query
@@ -102,49 +103,79 @@ sub octo_query
 	my ($self, $q) = @_;
 	my $part = shift;
 
-	my $ua = LWP::UserAgent->new( agent => 'mdf-perl/1.0',);
-	my $debug = 0;
 
-	if ($debug)
+	my $content;
+
+	my $h = md5_hex($q);
+	my $hashfile = "$self->{cache}/$h.query";
+
+	if ($self->{cache} && -e $hashfile)
 	{
-		$ua->add_handler(
-		  "request_send",
-		  sub {
-		    my $msg = shift;              # HTTP::Message
-		    $msg->dump( maxlength => 0 ); # dump all/everything
-		    return;
-		  }
-		);
-		 
-		$ua->add_handler(
-		  "response_done",
-		  sub {
-		    my $msg = shift;                # HTTP::Message
-		    $msg->dump( maxlength => 512 ); # dump max 512 bytes (default is 512)
-		    return;
-		  }
-		);
+		system('mkdir', '-p', $self->{cache}) if (! -d $self->{cache});
+
+
+
+		if (open(my $in, $hashfile))
+		{
+			local $/;
+			$content = <$in>;
+			close($in);
+		}
+	}
+	else
+	{
+		my $ua = LWP::UserAgent->new( agent => 'mdf-perl/1.0',);
+
+		if ($self->{ua_debug})
+		{
+			$ua->add_handler(
+			  "request_send",
+			  sub {
+			    my $msg = shift;              # HTTP::Message
+			    $msg->dump( maxlength => 0 ); # dump all/everything
+			    return;
+			  }
+			);
+
+			$ua->add_handler(
+			  "response_done",
+			  sub {
+			    my $msg = shift;                # HTTP::Message
+			    $msg->dump( maxlength => 512 ); # dump max 512 bytes (default is 512)
+			    return;
+			  }
+			);
+		}
+
+		my $req = HTTP::Request->new('POST' => 'https://octopart.com/api/v4/endpoint',
+			 HTTP::Headers->new(
+				'Host' => 'octopart.com',
+				'Content-Type' => 'application/json',
+				'Accept' => 'application/json',
+				'Accept-Encoding' => 'gzip, deflate',
+				'token' => $self->{token},
+				'DNT' => 1,
+				'Origin' => 'https://octopart.com',
+				),
+			encode_json( { query => $q }));
+
+		my $response = $ua->request($req);
+
+		if (!$response->is_success) {
+			die $response->status_line;
+		}
+
+		$content = $response->decoded_content;
+
+		if ($self->{cache})
+		{
+			open(my $out, ">", $hashfile) or die "$hashfile: $!";
+			print $out $content;
+			close($out);
+		}
 	}
 
-	my $req = HTTP::Request->new('POST' => 'https://octopart.com/api/v4/endpoint',
-		 HTTP::Headers->new(
-			'Host' => 'octopart.com',
-			'Content-Type' => 'application/json',
-			'Accept' => 'application/json',
-			'Accept-Encoding' => 'gzip, deflate',
-			'token' => (sub { my $t = `cat ~/.octopart-token`; chomp $t; return $t})->(),
-			'DNT' => 1,
-			'Origin' => 'https://octopart.com',
-			),
-		encode_json( { query => $q }));
-
-	my $response = $ua->request($req);
-
-	if (!$response->is_success) {
-		die $response->status_line;
-	}
-
-	return from_json($response->decoded_content);
+	return from_json($content);
 }
 
 sub get_part_detail
