@@ -21,6 +21,8 @@ use warnings;
 use Getopt::Long qw(:config bundling);
 use Data::Dumper;
 
+use JSON;
+
 my %opts;
 my %files;
 
