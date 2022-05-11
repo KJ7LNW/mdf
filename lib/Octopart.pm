@@ -9,14 +9,119 @@ use Digest::MD5 qw(md5_hex);
 
 use Data::Dumper;
 
+=head1 NAME
 
-sub get_part_stock
+API::Octopart - Simple inteface for querying part status across vendors.
+
+=head1 SYNOPSIS
+
+	my $o = Octopart->new(
+		token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
+		cache => "$ENV{HOME}/.octopart/cache",
+		ua_debug => 1,
+		);
+	my %opts = (
+		currency => 'USD',
+		max_moq => 100,
+		min_qty => 10,
+		max_price => 4,
+		#mfg => 'Murata',
+	);
+	print Dumper $o->get_part_stock_detail('RC0805FR-0710KL', %opts);
+	print Dumper $o->get_part_stock_detail('GQM1555C2DR90BB01D', %opts);
+
+=head1 METHODS
+
+=item * has_stock($part, %opts) - Returns true if in stock.
+
+=over 4
+
+$part: The model number of the part
+
+%opts: Optional filters:
+
+	currency: The currency for which purchase is accepted (eg, USD)
+	max_moq: The maximum "Minimum Order Quantity" you are willing to accept.
+	min_qty: The minimum quantity that must be available
+	max_price: The max price you are willing to pay
+	mfg: The manufacturer name, in case multiple parts have the same model
+
+=back 4
+
+=item * get_part_stock_detail($part, %opts) - Returns a stock detail structure
+
+=over 4
+$part, %opts: same as above.
+
+Returns a structure like this:
+
+        [
+            {
+                'mfg'     => 'Yageo',
+                'sellers' => {
+                    'Digi-Key' => {
+                        'moq'        => 1,
+                        'moq_price'  => '0.1',
+                        'price_tier' => {
+                            '1'    => '0.1',
+                            '10'   => '0.042',
+                            '100'  => '0.017',
+                            '1000' => '0.00762',
+                            '2500' => '0.00661',
+                            '5000' => '0.00546'
+                        },
+                        'stock' => 4041192
+                    },
+                    ...
+                },
+                'specs' => {
+                    'case_package'       => '0805',
+                    'composition'        => 'Thick Film',
+                    'contactplating'     => 'Tin',
+                    'leadfree'           => 'Lead Free',
+                    'length'             => '2mm',
+                    'numberofpins'       => '2',
+                    'radiationhardening' => 'No',
+                    'reachsvhc'          => 'No SVHC',
+                    'resistance' =>
+                      "10k\x{ce}\x{a9}",    # <- That is an Ohm symbol
+                    'rohs'              => 'Compliant',
+                    'tolerance'         => '1%',
+                    'voltagerating_dc_' => '150V',
+                    'width'             => '1.25mm'
+                }
+            },
+            ...
+        ]
+
+=back 4
+
+=cut
+
+sub get_part_stock_detail
 {
 	my ($self, $part, %opts) = @_;
 	
-	my $p = $self->get_part_detail($part);
+	my $p = $self->query_part_detail($part);
 
-	return $self->_parse_part_stock($p);
+	return $self->_parse_part_stock($p, %opts);
+}
+
+sub has_stock
+{
+	my ($self, $part, %opts) = @_;
+
+	my $parts = $self->get_part_stock_detail($part, %opts);
+
+	foreach my $p (@$parts)
+	{
+		if (scalar(keys(%{ $p->{sellers} })))
+		{
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 sub _parse_part_stock
@@ -53,42 +158,53 @@ sub _parse_part_stock
 				$ss{$s->{company}{name}}{stock} = $o->{inventory_level};
 				foreach my $p (@{ $o->{prices} })
 				{
-					next unless $p->{currency} eq 'USD';
+					next if (defined($opts{currency}) && $p->{currency} ne $opts{currency});
+
 					my $moq = $p->{quantity};
+					my $price = $p->{price};
 
-					$ss{$s->{company}{name}}{price_tier}{$p->{quantity}} = $p->{price};
+					$ss{$s->{company}{name}}{price_tier}{$p->{quantity}} = $price;
 
+					# Find the minimum order quantity and the MOQ price:
 					if (!defined($ss{$s->{company}{name}}{moq}) ||
 						$ss{$s->{company}{name}}{moq} > $moq)
 					{
 						$ss{$s->{company}{name}}{moq} = $moq;
-						$ss{$s->{company}{name}}{moq_price} = $p->{price}
+						$ss{$s->{company}{name}}{moq_price} = $price;
 					}
 				}
 			}
 			
 		}
+
 		$part{sellers} = \%ss;
 
 		push @results, \%part;
 	}
 
-	# Delete 
+	# Delete sellers that do not meet the constraints and
+	# add matching results to @ret:
+	my @ret;
 	foreach my $r (@results)
 	{
-		foreach my $c (keys %{ $r->{sellers} })
+		next if (defined($opts{mfg}) && $r->{mfg} ne $opts{mfg});
+
+		foreach my $s (keys %{ $r->{sellers} })
 		{
-			if ($r->{sellers}{$c}{stock} == 0
-				|| !defined($r->{sellers}{$c}{price_tier})
-				|| $r->{sellers}{$c}{moq} > 10
+			if (!defined($r->{sellers}{$s}{price_tier})
+				|| (defined($opts{min_qty}) && $r->{sellers}{$s}{stock} < $opts{min_qty})
+				|| (defined($opts{max_price}) && $r->{sellers}{$s}{moq_price} > $opts{max_price})
+				|| (defined($opts{max_moq}) && $r->{sellers}{$s}{moq} > $opts{max_moq})
 			   )
 			{
-				delete $r->{sellers}{$c};
+				delete $r->{sellers}{$s};
 			}
 		}
+
+		push @ret, $r;
 	}
 
-	return \@results;
+	return \@ret;
 }
 
 sub new
@@ -178,7 +294,7 @@ sub octo_query
 	return from_json($content);
 }
 
-sub get_part_detail
+sub query_part_detail
 {
 	my ($self, $part) = @_;
 
@@ -203,7 +319,7 @@ sub get_part_detail
 			  }
 			}
 			# Brokers are non-authorized dealers. See: https://octopart.com/authorized
-			sellers(include_brokers: false) {
+			sellers(include_brokers: true) {
 			  company {
 			    name
 			  }
