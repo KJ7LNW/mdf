@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-package Octopart;
+package API::Octopart;
 use strict;
 
 use JSON;

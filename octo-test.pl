@@ -2,11 +2,11 @@
 
 use strict;
 use lib 'lib';
-use Octopart;
+use API::Octopart;
 
 use Data::Dumper;
 $Data::Dumper::Sortkeys = 1;
-my $o = Octopart->new(
+my $o = API::Octopart->new(
 	token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
 	cache => "$ENV{HOME}/.octopart/cache",
 	ua_debug => 1,
