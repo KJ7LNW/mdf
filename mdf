@@ -18,10 +18,21 @@
 
 use strict;
 use warnings;
+use lib 'lib';
+
 use Getopt::Long qw(:config bundling);
+use JSON;
 use Data::Dumper;
 
-use JSON;
+use API::Octopart;
+
+my %octo_opts;
+my $octo = API::Octopart->new(
+	token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
+	cache => "$ENV{HOME}/.octopart/cache",
+	ua_debug => 1,
+	);
+
 
 my %opts;
 my %files;
@@ -41,7 +52,7 @@ usage() if ( !@{ $opts{vars} } && !@{ $opts{vars_literal} });
 
 $opts{sort} //= $opts{vars}->[0];
 $opts{sort} //= $opts{vars_literal}->[0];
-$opts{sort} =~ s/=.*$//;
+$opts{sort} =~ s/[=,].*$//;
 
 my %seen;
 FILE: foreach my $file (@ARGV)
@@ -50,7 +61,7 @@ FILE: foreach my $file (@ARGV)
 	
 	foreach my $var_regex (@{ $opts{vars} })
 	{
-		my ( $var, $regex ) = split(/=/, $var_regex);
+		my ( $var, $regex ) = split(/[=,]/, $var_regex);
 		my $val;
 
 		if ( $file =~ /$regex/ && $1 ) 
@@ -98,7 +109,15 @@ FILE: foreach my $file (@ARGV)
 	}
 
 	
-	$files{$file} = \%vars;
+	my $model = get_model($file);
+	if ($octo->has_stock($model, %octo_opts))
+	{
+		$files{$file} = \%vars;
+	}
+	else
+	{
+		print STDERR "No stock: $model\n";
+	}
 }
 
 my $idx = 0;
@@ -116,9 +135,7 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 
 	foreach my $var ( keys(%{ $files{$file} }) )
 	{
-		my $f = $file;
-		$f =~ s/.*\///;
-		$f =~ s/.s2p//i;
+		my $f = get_model($file);
 		#print "VAR $var=\"x$files{$file}{$var}x\"\n"; 
 		print "VAR $var=\"$idx. $files{$file}{$var} $f\"\n"; 
 		
@@ -135,6 +152,8 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 	print "END\n\n";
 
 }
+
+print STDERR "Octopart.com API queries: " . $octo->octo_query_count() . "\n";
 
 #print Dumper(\%files);
 
@@ -170,4 +189,13 @@ sub read_file
 	my $content = <$in>;
 	close($in);
 	return $content;
+}
+
+sub get_model
+{
+	my $f = shift;
+	$f =~ s/.*\///;
+	$f =~ s/.s2p//i;
+
+	return $f;
 }
