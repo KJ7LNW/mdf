@@ -1,127 +1,199 @@
-#!/usr/bin/perl 
+#!/usr/bin/perl
 
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
 #  the Free Software Foundation; either version 3 of the License, or
 #  (at your option) any later version.
-# 
+#
 #  This program is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU Library General Public License for more details.
-# 
+#
 #  You should have received a copy of the GNU General Public License
 #  along with this program; if not, write to the Free Software
 #  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
-# 
-#  Copyright (C) 2021- by Ezekiel Wheeler, KJ7LNW.  All rights reserved.
+#
+#  Copyright (C) 2022- by Ezekiel Wheeler, KJ7NLL and Eric Wheeler, KJ7LNW.
+#  All rights reserved.
+#
+#  Octopart is a registered trademark and brand of Octopart, Inc.
+#
+#  All tradmarks, product names, logos, and brands are property of their
+#  respective owners and no grant or license is provided thereof.
+#
+#  The copyright below applies to this software module; the copyright holder is
+#  unaffiliated with Octopart, Inc.
 
 use strict;
 use warnings;
 use lib 'lib';
 
+use Term::ANSIColor;
 use Getopt::Long qw(:config bundling);
 use JSON;
 use Data::Dumper;
 
 use API::Octopart;
 
-my %octo_opts;
 my $octo = API::Octopart->new(
 	token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
 	cache => "$ENV{HOME}/.octopart/cache",
-	ua_debug => 1,
+	ua_debug => 0,
 	);
+
+my %octo_filter;
 
 
 my %opts;
 my %files;
 
+$opts{verbose} = 0;
+
 GetOptions(
-	"var-code|v=s"		=> \@{ $opts{vars} },
-	"var-literal|l=s"		=> \@{ $opts{vars_literal} },
+	"var-code|V=s"		=> \$opts{var_code},
+	"var-literal|L=s"		=> \$opts{var_literal},
 	"unique|u"			=> \$opts{unique},
-	#"var-numeric|n=s"		=> \@{ $opts{vars_numeric} },
-	"mdf|m=s"		=> \$opts{mdf},
-	"sort|s=s"		=> \$opts{sort}
+	"sort|s=s"		=> \$opts{sort},
+	"limit|s=s"		=> \$opts{limit},
+	"verbose|v"		=> sub {$opts{verbose}++},
+	"output|o=s"		=> \$opts{output},
+	"octopart|O"		=> \$opts{octopart},
+	"octopart-filter|F=s"	=> \$opts{octopart_filter},
 ) or usage();
 
-
 usage() if ( !@ARGV );
-usage() if ( !@{ $opts{vars} } && !@{ $opts{vars_literal} });
+usage() if ( !$opts{output} );
+usage() if ( !$opts{var_code} && !$opts{var_literal});
+usage() if ( $opts{var_code} && $opts{var_literal});
 
-$opts{sort} //= $opts{vars}->[0];
-$opts{sort} //= $opts{vars_literal}->[0];
+if ($opts{octopart_filter})
+{
+	$opts{octopart} = 1;
+	%octo_filter = map { split /\s*=\s*/ } split(/\s*,\s*/, $opts{octopart_filter})
+}
+
+$opts{sort} //= $opts{var_code};
+$opts{sort} //= $opts{var_literal};
 $opts{sort} =~ s/[=,].*$//;
 
 my %seen;
-FILE: foreach my $file (@ARGV)
+my $count = 0;
+foreach my $file (@ARGV)
 {
 	my %vars;
-	
-	foreach my $var_regex (@{ $opts{vars} })
-	{
-		my ( $var, $regex ) = split(/[=,]/, $var_regex);
-		my $val;
+	my ($var, $val, $regex);
 
-		if ( $file =~ /$regex/ && $1 ) 
+	last if (defined($opts{limit}) && ++$count > $opts{limit});
+
+	if ($opts{var_code})
+	{
+		( $var, $regex ) = split(/[=,]/, $opts{var_code});
+
+		if ($file =~ /$regex/ && $1)
 		{
 			$val = $1;
-
-			# skip to the next file if already seen:
-			next FILE if ($opts{unique} && $seen{$val});
-
-			$seen{$val}++;
-			if ( $val =~ s/[A-Z]/./i )
-			{
-				$vars{$var} = $val;
-			}
-			elsif ( $val =~ s/^(\d+)(\d)$/$1/ ) 
-			{
-				$vars{$var} = $1 * (10 ** $2);
-			}
-			else 
-			{
-				warn "$file: unknown value code $val";
-			}
 		}
-		else 
+		else
 		{
-			warn "$file: Does not match regex $regex for $var.";
+			Warn($file, "did not match regex, skipping: $regex");
+			next;
+		}
+
+
+		if ( $val =~ s/[A-Z]/./i )
+		{
+			$vars{$var} = $val;
+		}
+		elsif ( $val =~ s/^(\d+)(\d)$/$1/ )
+		{
+			$vars{$var} = $1 * (10 ** $2);
+		}
+		else
+		{
+			Warn($file, "unknown value code $val");
 		}
 	}
-
-	foreach my $var_regex (@{ $opts{vars_literal} })
+	elsif ($opts{var_literal})
 	{
-		my ( $var, $regex ) = split(/,/, $var_regex);
-		my $val;
+		( $var, $regex ) = split(/[=,]/, $opts{var_literal});
 
-		if ( $file =~ /$regex/ && $1 ) 
+		if ( $file =~ /$regex/ && $1 )
 		{
 			$vars{$var} = $1;
 		}
 
 	}
+	else
+	{
+		my $regex //= $opts{var_code};
+		$regex //= $opts{var_literal};
+		$regex =~ s/^.*[=,]//;
+		Warn($file, "Does not match regex: $regex");
+	}
 
-	if ( !defined($vars{$opts{sort}}) ) 
+	if ( !defined($vars{$opts{sort}}) )
 	{
 		die "$file: no sort column found for $opts{sort}";
 	}
 
 	
 	my $model = get_model($file);
-	if ($octo->has_stock($model, %octo_opts))
+
+	my $stock;
+	if ($opts{octopart})
 	{
-		$files{$file} = \%vars;
+		$stock = $octo->has_stock($model, %octo_filter);
+		if ($opts{verbose} >= 4)
+		{
+			print STDERR colored(['white bold'], "$file:\n\t") .
+				colored(['blue'],
+					Dumper($octo->get_part_stock_detail($model, %octo_filter)) . "\n");
+		}
 	}
 	else
 	{
-		print STDERR "No stock: $model\n";
+		$stock = 'unknown'; # "true" as in perl
 	}
+
+	my $color;
+	if ($stock)
+	{
+		# skip to the next file if already seen:
+		next if ($opts{unique} && $seen{$val});
+
+		$seen{$val}++;
+
+		if ($val !~ /^\d+\.?\d*$/)
+		{
+			Warn($file, "value is not numeric");
+		}
+
+		if ($opts{verbose} >= 2)
+		{
+			print STDERR colored(['green bold'], "$model ($var=$val): $stock in stock\n")
+		}
+		$files{$file} = \%vars;
+	}
+	elsif ($opts{verbose} >= 3)
+	{
+		print STDERR colored(['red bold'], "$model ($var=$val): $stock in stock\n");
+	}
+
+}
+
+my $out;
+if ($opts{output} eq '-')
+{
+	$out = *STDOUT;
+}
+else
+{
+	open($out, ">", $opts{output}) or die "$opts{output}: $!";
 }
 
 my $idx = 0;
-foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files ) 
+foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files )
 {
 	my $c = read_file($file);
 	
@@ -131,29 +203,52 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 	{
 		$pound = $1;
 	}
-	print "! $file\n";
+	print $out "! $file\n";
+
+	my $model = get_model($file);
 
 	foreach my $var ( keys(%{ $files{$file} }) )
 	{
-		my $f = get_model($file);
-		#print "VAR $var=\"x$files{$file}{$var}x\"\n"; 
-		print "VAR $var=\"$idx. $files{$file}{$var} $f\"\n"; 
+		if ($opts{verbose} >= 1)
+		{
+			print STDERR colored(['blue'],
+				"Adding $var=\"$idx. $files{$file}{$var} $model\" to the mdf.\n");
+		}
+		print $out "VAR $var=\"$idx. $files{$file}{$var} $model\"\n";
+		#print $out "VAR $var=\"x$files{$file}{$var}x\"\n";
 		
 		$idx++;
 	}
 
-	print "BEGIN ACDATA\n";
-	#print "%F  n11x   n11y  n21x  n21y  n12x  n12y n22x  n22y\n";
-	print "$pound";
-	print "% F S[1,1](Complex) S[2,1](Complex) S[1,2](Complex) S[2,2](Complex)\n";
-	print "$c";
-	print "\n" if ($c !~ /\n$/s);
+	print $out "BEGIN ACDATA\n";
+	#print $out "%F  n11x   n11y  n21x  n21y  n12x  n12y n22x  n22y\n";
+	print $out "$pound";
+	print $out "% F S[1,1](Complex) S[2,1](Complex) S[1,2](Complex) S[2,2](Complex)\n";
+	print $out "$c";
+	print $out "\n" if ($c !~ /\n$/s);
 
-	print "END\n\n";
-
+	print $out "END\n\n";
 }
 
-print STDERR "Octopart.com API queries: " . $octo->octo_query_count() . "\n";
+if ($opts{verbose} >= 1)
+{
+	print STDERR colored(['blue bold'], "Added $idx parts to $opts{output}.\n");
+}
+
+close($out);
+
+if ($opts{verbose} >= 1)
+{
+	if ($opts{octopart})
+	{
+		print STDERR colored(['white bold'],
+			"Octopart.com API queries: " . $octo->octo_query_count() . "\n")
+	}
+	else
+	{
+		print STDERR colored(['white bold'], "Octopart.com API queries are not enabled\n");
+	}
+}
 
 #print Dumper(\%files);
 
@@ -161,21 +256,101 @@ exit 0;
 
 sub usage
 {
-	print "$0 [--unique] --var-(literal|code) 'var_name=MODEL-(...)\.s2p' [--var ...] file1.s2p [file2...] > mymdf.mdf\n";
-	print "   --var-code specifies the variable to be assigned and a regular
-	expression to match the capacitance code (or other unit): NNX or NRN. X is
-	the exponent, N is a numeric value. A-Z is typically used by
-	manufacturers to indicate the decimal point.
+	print "usage: $0 [--unique] --var-code 'var_name=MODEL-(...)\.s2p' file1.s2p [file2...] > mymdf.mdf
 
-	Above (...) matches the code or literal to be placed in the MDF variable.  If
-	a capacitor code is 111 then it will calculate 11*10^1 == 110 pF.
-	A code of 1N4 or 14N would be 1.4 or 14.0, respectively.
+--output|-o      <file>        Output filename, required.
+	If the filename is '-' then output will be written to stdout
+
+--var-code|-V    <regex>       Either of --var-code or --var-literal are required.
+	Specifies the variable to be assigned and a regular expression to match
+	the capacitance code (or other unit): NNX or NRN. X is the exponent, N
+	is a numeric value.
+
+	If a capacitor code is 111 then it will calculate 11*10^1 == 110 pF.  A
+	code of 1N4 or 14N would be 1.4 or 14.0, respectively. The unit 'pF' in
+	the example is excluded from the code.
+
+	The above (...) must match the code or literal to be placed in the MDF
+	variable. Example:
+		--var-code 'C_pF=MODEL-(...)\.s2p'
 	
-	The --var-literal version does not parse the code.
+--var-literal|-L <code>        Either of --var-code or --var-literal are required.
+	The var-literal version is the same as --var-code but does not
+	calcualte the code, it takes the value verbatim.  For example, some
+	inductors specify the number of turns in their s2p filename:
+		--var-literal 'L_turns=MODEL-([0-9]+)T\.s2p'
 	
-	--unique will choose only the first matching code if multiple of the same code are found.
-		
-	Output is written to STDOUT so redirect into your .mdf file\n";
+
+--unique|-u                    Make values unique
+	Choose only the first matching code if multiple of the same code are
+	found.  Note that file ordering may be relevant when using the --unique
+	constraint:
+
+	If you wish to prioritize the tolerance code (or other coded metric)
+	then order the file list in tolerance order.  So long as the names are
+	the same except the tolerance code you could glob the tolerance code
+	with braces ordered by tolerance as follows:
+
+		GQM1555C2D???{B,C}*.s2p
+
+	Where '???' is the value code, 'B' is +/- 0.1pF and 'C' is +/- 0.25pF
+	for this example muRata part. (Note that [BC] style globbing does not
+	work because the charectar class does not enforce ordering, nor does it
+	support multi-charectar codes.)
+
+	According to the muRata part guide the tolerance codes this glob lists
+	in ascending order:
+		GQM1555C2D???{W,B,C,D,F,G,J,K,M}*.s2p
+		[ https://search.murata.co.jp/Ceramy/image/img/A01X/partnumbering_e_01.pdf ]
+
+	Of course this technique can be used for any S2P component and is not
+	specific to the manufacturer or type of component (L, C, R, etc).
+	Refer to your manufacturer's documentation to choose the right
+	tolerance ordering for your application.
+
+--octopart|-O               Enable Octopart stock querying
+	You will need to place your API token in ~/.octopart/token .  Queries are
+	cached in ~/.octopart/cache/ to minimize redundant API requests but you 
+	may wish to clear that directory out periodically since stock numbers will
+	become stale.
+
+--octopart-filter|-F <filter_opts>    This option implies -O.
+
+	The <filter_opts> are comma-separated values passed to the
+	API::Octopart class.  These are common filter options to remember:
+
+		min_qty=<n>    - Minimum stock quantity, per vendor.
+
+		max_moq=<n>    - Maximum \"minimum order quantity\"
+			This is the max MOQ you will accept as being in
+			stock.  For example, a 5000-part reel might be more
+			than you want for prototyping so set this to 10 or
+			100.
+
+		seller=<regex> - Seller's name (regular expression)
+			This is a regular expression so something like
+			'Mouser|Digi-key' is valid.
+
+		mfg=<regex>    - Manufacturer name (regular expression)
+			Specifying the mfg name is useful if your part model
+			number is similar to those of other manufacturers.
+
+		currency=<s>   - 'USD' for US dollars
+			Defaults to include all currencies
+
+	Example: $0 -O -F 'max_moq=100,min_qty=10,seller=Mouser|Digi-key'	
+
+	See `perldoc API::Octopart` (or perldoc lib/API/Octopart.pm) for details.
+
+--limit|-l    <N>           Limit number of file evaluations to N.
+	This is useful for debugging your regex with -vvv.  Glob all the files
+	you want but limit to N so you only make a few Octopart queries while
+	testing.
+
+--verbose|-v                Multiple -v's increase verbosity.
+	At least 4x -v's will print detailed Octopart responses.
+\n";
+
 
 	exit 1;
 }
@@ -198,4 +373,14 @@ sub get_model
 	$f =~ s/.s2p//i;
 
 	return $f;
+}
+
+sub Warn
+{
+	my ($file, @msg) = @_;
+
+	# Strip the path if verbose <3
+	$file =~ s!^.*/!! if ($opts{verbose} < 3);
+
+	print STDERR colored(['yellow bold'], "$file: " . join("\n", @msg)) . "\n";
 }
