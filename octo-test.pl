@@ -18,5 +18,17 @@ my %opts = (
 	max_price => 4,
 	#mfg => 'Murata',
 );
-print Dumper $o->get_part_stock_detail('RC0805FR-0710KL', %opts);
-print Dumper $o->get_part_stock_detail('GQM1555C2DR90BB01D', %opts);
+
+if (!@ARGV)
+{
+	print STDERR "usage: $0 part-model1 [part-model2] ...\n";
+	exit 1;
+}
+
+foreach my $model (@ARGV)
+{
+	print STDERR Dumper($o->get_part_stock_detail($model, %opts));
+	print STDERR sprintf("$model: %d stock\n", $o->has_stock($model, %opts));
+}
+
+print STDERR "Octopart.com API queries: " . $o->octo_query_count() . "\n";
