@@ -10,6 +10,7 @@ my $o = API::Octopart->new(
 	token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
 	cache => "$ENV{HOME}/.octopart/cache",
 	ua_debug => 1,
+	#include_specs => 1,
 	);
 my %opts = (
 	currency => 'USD',
