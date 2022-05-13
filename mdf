@@ -36,32 +36,26 @@ use Data::Dumper;
 
 use API::Octopart;
 
-my $octo = API::Octopart->new(
-	token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
-	cache => "$ENV{HOME}/.octopart/cache",
-	ua_debug => 0,
-	);
-
-my %octo_filter;
-
-
 my %opts;
-my %files;
 
+# Defaults:
 $opts{verbose} = 0;
+$opts{unique} = 1;
 $opts{octopart_show_stock} = 0;
 
 GetOptions(
 	"var-code|V=s"		=> \$opts{var_code},
-	"var-literal|L=s"		=> \$opts{var_literal},
-	"unique|u"			=> \$opts{unique},
-	"sort|s=s"		=> \$opts{sort},
-	"limit|s=s"		=> \$opts{limit},
+	"var-literal|L=s"	=> \$opts{var_literal},
+	"unique|u"		=> sub { $opts{unique} = 1 },
+	"not-unique|U"		=> sub { $opts{unique} = 0 },
+	"sort|s=s"		=> \$opts{sort}, # this should be removed.
+	"limit|l=s"		=> \$opts{limit},
 	"verbose|v"		=> sub {$opts{verbose}++},
 	"quiet|q"		=> \$opts{quiet},
 	"output|o=s"		=> \$opts{output},
 	"octopart|O"		=> \$opts{octopart},
 	"octopart-filter|F=s"	=> \$opts{octopart_filter},
+	"octopart-include-specs|I" => \$opts{octopart_specs},
 	"octopart-show-stock|S"	=> sub{ $opts{octopart_show_stock}++ },
 ) or usage();
 
@@ -70,16 +64,31 @@ usage() if ( !$opts{output} );
 usage() if ( !$opts{var_code} && !$opts{var_literal});
 usage() if ( $opts{var_code} && $opts{var_literal});
 
+my $octo;
+my %octo_filter;
+
 if ($opts{octopart_filter})
 {
 	$opts{octopart} = 1;
 	%octo_filter = map { split /\s*=\s*/ } split(/\s*,\s*/, $opts{octopart_filter})
 }
 
+if ($opts{octopart})
+{
+	$octo = API::Octopart->new(
+		token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
+		cache => "$ENV{HOME}/.octopart/cache",
+		include_specs => $opts{octopart_specs},
+		ua_debug => 0,
+		);
+}
+
+
 $opts{sort} //= $opts{var_code};
 $opts{sort} //= $opts{var_literal};
 $opts{sort} =~ s/[=,].*$//;
 
+my %files;
 my %seen;
 my $count = 0;
 foreach my $file (@ARGV)
@@ -93,7 +102,7 @@ foreach my $file (@ARGV)
 	{
 		( $var, $regex ) = split(/[=,]/, $opts{var_code});
 
-		if ($file =~ /$regex/ && $1)
+		if ($file =~ /$regex/i && $1)
 		{
 			$val = $1;
 		}
@@ -103,9 +112,12 @@ foreach my $file (@ARGV)
 			next;
 		}
 
-
 		if ( $val =~ s/[A-Z]/./i )
 		{
+			# These are strings, so put leading/trailing zeros at the decimal:
+			$val =~ s/^\./0./;
+			$val =~ s/\.$/.0/;
+
 			$vars{$var} = $val;
 		}
 		elsif ( $val =~ s/^(\d+)(\d)$/$1/ )
@@ -122,7 +134,7 @@ foreach my $file (@ARGV)
 	{
 		( $var, $regex ) = split(/[=,]/, $opts{var_literal});
 
-		if ( $file =~ /$regex/ && $1 )
+		if ( $file =~ /$regex/i && $1 )
 		{
 			$vars{$var} = $1;
 		}
@@ -215,7 +227,7 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 
 	my $model = get_model($file);
 
-	my $stock = $octo->get_part_stock($model, %octo_filter);
+	my $stock = $octo->get_part_stock($model, %octo_filter) if ($opts{octopart});
 	$seller_counts{$_}++ foreach (keys %$stock);
 
 	foreach my $var ( keys(%{ $files{$file} }) )
@@ -292,6 +304,8 @@ sub usage
 --output|-o      <file>        Output filename, required.
 	If the filename is '-' then output will be written to stdout
 
+Note that regular expressions matching filenames are always case-insensitive:
+
 --var-code|-V    <regex>       Either of --var-code or --var-literal are required.
 	Specifies the variable to be assigned and a regular expression to match
 	the capacitance code (or other unit): NNX or NRN. X is the exponent, N
@@ -312,7 +326,8 @@ sub usage
 		--var-literal 'L_turns=MODEL-([0-9]+)T\.s2p'
 	
 
---unique|-u                    Make values unique
+--not-unique|-U                Make values NOT unique
+--unique|-u                    Make values unique (default)
 	Choose only the first matching code if multiple of the same code are
 	found.  Note that file ordering may be relevant when using the --unique
 	constraint:
@@ -346,7 +361,6 @@ sub usage
 	become stale.
 
 --octopart-filter|-F <filter_opts>    This option implies -O.
-
 	The <filter_opts> are comma-separated values passed to the
 	API::Octopart class.  These are common filter options to remember:
 
@@ -372,6 +386,10 @@ sub usage
 	Example: $0 -O -F 'max_moq=100,min_qty=10,seller=Mouser|Digi-key'	
 
 	See `perldoc API::Octopart` (or perldoc lib/API/Octopart.pm) for details.
+
+--octopart-include-specs|-I Request product specs in the API call.
+	Currently $0 does not do anything with product specs, but if you have
+	an Octopart PRO account then you can enable this option ;)
 
 --octopart-show-stock|-S    Show stock summaries
 	Calling this option more than once increases the stock detail.  A
