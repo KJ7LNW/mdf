@@ -53,6 +53,7 @@ GetOptions(
 	"verbose|v"		=> sub {$opts{verbose}++},
 	"quiet|q"		=> \$opts{quiet},
 	"output|o=s"		=> \$opts{output},
+	"model-suffix|m=s"	=> \$opts{model_suffix},
 	"octopart|O"		=> \$opts{octopart},
 	"octopart-filter|F=s"	=> \$opts{octopart_filter},
 	"octopart-include-specs|I" => \$opts{octopart_specs},
@@ -213,6 +214,7 @@ else
 
 my $idx = 0;
 my %seller_counts;
+my %part_models;
 foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files )
 {
 	my $c = read_file($file);
@@ -227,6 +229,7 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 
 	my $model = get_model($file);
 
+	$part_models{$model}++;
 	my $stock = $octo->get_part_stock($model, %octo_filter) if ($opts{octopart});
 	$seller_counts{$_}++ foreach (keys %$stock);
 
@@ -263,7 +266,7 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 
 if ($opts{verbose} >= 1)
 {
-	print STDERR colored(['blue bold'], "Added $idx parts to $opts{output}.\n");
+	print STDERR colored(['blue bold'], "Added $idx parts to $opts{output}\n");
 }
 
 if ($opts{octopart_show_stock} >= 1)
@@ -354,6 +357,15 @@ Note that regular expressions matching filenames are always case-insensitive:
 	Refer to your manufacturer's documentation to choose the right
 	tolerance ordering for your application.
 
+--model-suffix|-m <suffix>  Append a string to each model
+
+	It may be useful to append a string to the filename model when querying
+	Octopart.  For example, if the Coilcraft filename is 0402-DC7N6 then a
+	model-suffix of 'XG' would indicate a 2% tolerance instead of the 'XJ'
+	which is a 5% tolerance.
+
+	This string is also added to the VAR line in the .mdf.
+
 --octopart|-O               Enable Octopart stock querying
 	You will need to place your API token in ~/.octopart/token .  Queries are
 	cached in ~/.octopart/cache/ to minimize redundant API requests but you
@@ -427,6 +439,8 @@ sub get_model
 	my $f = shift;
 	$f =~ s/.*\///;
 	$f =~ s/.s2p//i;
+
+	$f .= $opts{model_suffix} // '';
 
 	return $f;
 }
