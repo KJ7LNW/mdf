@@ -49,6 +49,7 @@ my %opts;
 my %files;
 
 $opts{verbose} = 0;
+$opts{octopart_show_stock} = 0;
 
 GetOptions(
 	"var-code|V=s"		=> \$opts{var_code},
@@ -57,9 +58,11 @@ GetOptions(
 	"sort|s=s"		=> \$opts{sort},
 	"limit|s=s"		=> \$opts{limit},
 	"verbose|v"		=> sub {$opts{verbose}++},
+	"quiet|q"		=> \$opts{quiet},
 	"output|o=s"		=> \$opts{output},
 	"octopart|O"		=> \$opts{octopart},
 	"octopart-filter|F=s"	=> \$opts{octopart_filter},
+	"octopart-show-stock|S"	=> sub{ $opts{octopart_show_stock}++ },
 ) or usage();
 
 usage() if ( !@ARGV );
@@ -96,7 +99,7 @@ foreach my $file (@ARGV)
 		}
 		else
 		{
-			Warn($file, "did not match regex, skipping: $regex");
+			Warn($file, "Did not match regex, skipping: $regex");
 			next;
 		}
 
@@ -111,7 +114,8 @@ foreach my $file (@ARGV)
 		}
 		else
 		{
-			Warn($file, "unknown value code $val");
+			Warn($file, "Unknown value code '$val'");
+			next;
 		}
 	}
 	elsif ($opts{var_literal})
@@ -122,19 +126,22 @@ foreach my $file (@ARGV)
 		{
 			$vars{$var} = $1;
 		}
-
 	}
 	else
 	{
-		my $regex //= $opts{var_code};
-		$regex //= $opts{var_literal};
-		$regex =~ s/^.*[=,]//;
-		Warn($file, "Does not match regex: $regex");
+		die "Either --var-literal or --var-code must be set.";
+	}
+
+	if (!defined($val))
+	{
+		Warn($file, "Could not find an value for var: '$var'.");
+		next;
 	}
 
 	if ( !defined($vars{$opts{sort}}) )
 	{
-		die "$file: no sort column found for $opts{sort}";
+		Warn($file, "No sort column found for $opts{sort}; val=$val");
+		next;
 	}
 
 	
@@ -153,10 +160,10 @@ foreach my $file (@ARGV)
 	}
 	else
 	{
-		$stock = 'unknown'; # "true" as in perl
+		# Perl will evaluate this nonzero-length string as "true", below.
+		$stock = 'unknown';
 	}
 
-	my $color;
 	if ($stock)
 	{
 		# skip to the next file if already seen:
@@ -164,9 +171,9 @@ foreach my $file (@ARGV)
 
 		$seen{$val}++;
 
-		if ($val !~ /^\d+\.?\d*$/)
+		if ($val !~ /^\d+\.?\d*|\d*\.?\d+$/)
 		{
-			Warn($file, "value is not numeric");
+			Warn($file, "Value for $var is not numeric: $val");
 		}
 
 		if ($opts{verbose} >= 2)
@@ -193,6 +200,7 @@ else
 }
 
 my $idx = 0;
+my %seller_counts;
 foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files )
 {
 	my $c = read_file($file);
@@ -207,9 +215,20 @@ foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}
 
 	my $model = get_model($file);
 
+	my $stock = $octo->get_part_stock($model, %octo_filter);
+	$seller_counts{$_}++ foreach (keys %$stock);
+
 	foreach my $var ( keys(%{ $files{$file} }) )
 	{
-		if ($opts{verbose} >= 1)
+		if ($opts{octopart_show_stock} >= 2)
+		{
+			print STDERR colored(['bold blue'],
+				"$var=\"$idx. $files{$file}{$var} $model: " .
+				Dumper($stock) .
+				"\n");
+
+		}
+		elsif ($opts{verbose} >= 1)
 		{
 			print STDERR colored(['blue'],
 				"Adding $var=\"$idx. $files{$file}{$var} $model\" to the mdf.\n");
@@ -235,13 +254,22 @@ if ($opts{verbose} >= 1)
 	print STDERR colored(['blue bold'], "Added $idx parts to $opts{output}.\n");
 }
 
+if ($opts{octopart_show_stock} >= 1)
+{
+	foreach my $s (sort { $seller_counts{$b} <=> $seller_counts{$a} } keys %seller_counts)
+	{
+		print STDERR colored(['cyan'],
+			"$seller_counts{$s} parts are available through $s\n");
+	}
+}
+
 close($out);
 
 if ($opts{verbose} >= 1)
 {
 	if ($opts{octopart})
 	{
-		print STDERR colored(['white bold'],
+		print STDERR colored(['white'],
 			"Octopart.com API queries: " . $octo->octo_query_count() . "\n")
 	}
 	else
@@ -253,6 +281,9 @@ if ($opts{verbose} >= 1)
 #print Dumper(\%files);
 
 exit 0;
+
+##############################################################################
+# Functions
 
 sub usage
 {
@@ -310,7 +341,7 @@ sub usage
 
 --octopart|-O               Enable Octopart stock querying
 	You will need to place your API token in ~/.octopart/token .  Queries are
-	cached in ~/.octopart/cache/ to minimize redundant API requests but you 
+	cached in ~/.octopart/cache/ to minimize redundant API requests but you
 	may wish to clear that directory out periodically since stock numbers will
 	become stale.
 
@@ -342,6 +373,11 @@ sub usage
 
 	See `perldoc API::Octopart` (or perldoc lib/API/Octopart.pm) for details.
 
+--octopart-show-stock|-S    Show stock summaries
+	Calling this option more than once increases the stock detail.  A
+	single -S shows final summary and two -SS shows per-product per-seller
+	stock detail.
+
 --limit|-l    <N>           Limit number of file evaluations to N.
 	This is useful for debugging your regex with -vvv.  Glob all the files
 	you want but limit to N so you only make a few Octopart queries while
@@ -349,6 +385,8 @@ sub usage
 
 --verbose|-v                Multiple -v's increase verbosity.
 	At least 4x -v's will print detailed Octopart responses.
+
+--quiet|-q                  Suppress warnings, but does not suppress verbosity.
 \n";
 
 
@@ -378,6 +416,8 @@ sub get_model
 sub Warn
 {
 	my ($file, @msg) = @_;
+
+	return if $opts{quiet};
 
 	# Strip the path if verbose <3
 	$file =~ s!^.*/!! if ($opts{verbose} < 3);
