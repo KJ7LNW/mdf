@@ -72,6 +72,7 @@ sub load
 {
 	my ($self, $fn) = @_;
 
+	my $class;
 	my ($funit, $param, $fmt, $R, $zref);
 
 	open(my $in, $fn) or die "$fn: $!";
@@ -104,7 +105,21 @@ sub load
 		}
 
 		$self->{zref} = $zref;
-		$self->{param} = $param;
+		$self->{param_type} = $param;
+
+		if ($self->{param_type} eq 'S') {
+			$class = 'RF::S2P::SParam';
+		}
+		elsif ($self->{param_type} eq 'Y') {
+			$class = 'RF::S2P::YParam';
+		}
+		else
+		{
+			warn "$self->{param_type}-parameter type is not implemented, using base class.";
+			$class = 'RF::S2P::Measurement';
+		}
+
+
 
 		$line =~ s/^\s+|\s+$//g;
 		my @params = split(/\s+/, $line);
@@ -118,7 +133,7 @@ sub load
 
 		$hz = scale_to_hz($funit, $hz);
 
-		push @{ $self->{params} }, RF::S2P::SParam->new(hz => $hz, params => \@params_cx);
+		push @{ $self->{params} }, $class->new(hz => $hz, params => \@params_cx);
 	}
 }
 
