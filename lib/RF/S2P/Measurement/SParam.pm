@@ -1,4 +1,4 @@
-package RF::S2P::SParam;
+package RF::S2P::Measurement::SParam;
 use parent 'RF::S2P::Measurement';
 
 use strict;

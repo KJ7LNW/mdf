@@ -5,6 +5,8 @@ use warnings;
 
 use Math::Complex;
 use Math::Trig;
+use RF::S2P::Measurement::SParam;
+use RF::S2P::Measurement::YParam;
 
 sub new
 {
@@ -13,6 +15,18 @@ sub new
 	my $self = bless(\%args, $class);
 
 	return $self;
+}
+
+sub yparams
+{
+	my $self = shift;
+
+	return $self if ref($self) eq 'RF::S2P::Measurement::YParams';
+	return $self->{yparams} if defined($self->{yparams});
+
+	die "$self must be sparam" if ref($self) ne 'RF::S2P::Measurement::SParam';
+	$self->{yparams} = RF::S2P::Measurement::YParam->from_sparam($self);
+	return $self->{yparams};
 }
 
 sub hz

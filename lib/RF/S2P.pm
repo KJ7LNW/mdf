@@ -3,9 +3,11 @@ package RF::S2P;
 use strict;
 use warnings;
 
-use RF::S2P::SParam;
 use Math::Complex;
 use Data::Dumper;
+
+use RF::S2P::Measurement::SParam;
+use RF::S2P::Measurement::YParam;
 
 sub new
 {
@@ -64,8 +66,11 @@ sub get_param
 	# if interpolated, instatiate a new class instance
 	# and make sure it is the same class type because
 	# 'params' could be S-, Y-, Z-params, etc.
-	my $class = ref($self);
-	return $class->new(hz => $hz, params => \@ret);
+	my $class = ref($cur);
+	my %opts = %$cur;
+	delete $opts{params};
+	delete $opts{hz};
+	return $class->new(%opts, hz => $hz, params => \@ret);
 }
 
 sub load
@@ -73,7 +78,7 @@ sub load
 	my ($self, $fn) = @_;
 
 	my $class;
-	my ($funit, $param, $fmt, $R, $zref);
+	my ($funit, $param, $fmt, $R, $z0);
 
 	open(my $in, $fn) or die "$fn: $!";
 
@@ -96,22 +101,22 @@ sub load
 
 		if ($line =~ s/^#\s*//)
 		{
-			($funit, $param, $fmt, $R, $zref) = split /\s+/, $line;
+			($funit, $param, $fmt, $R, $z0) = split /\s+/, $line;
 
-			die "zref != 50 ohms: $zref" if $zref != 50;
+			die "z0 != 50 ohms: $z0" if $z0 != 50;
 			die "param != S: $param" if $param ne 'S';
 			die "R != R: $R" if $R ne 'R';
 			next;
 		}
 
-		$self->{zref} = $zref;
+		$self->{z0} = $z0;
 		$self->{param_type} = $param;
 
 		if ($self->{param_type} eq 'S') {
-			$class = 'RF::S2P::SParam';
+			$class = 'RF::S2P::Measurement::SParam';
 		}
 		elsif ($self->{param_type} eq 'Y') {
-			$class = 'RF::S2P::YParam';
+			$class = 'RF::S2P::Measurement::YParam';
 		}
 		else
 		{
@@ -133,7 +138,8 @@ sub load
 
 		$hz = scale_to_hz($funit, $hz);
 
-		push @{ $self->{params} }, $class->new(hz => $hz, params => \@params_cx);
+		push @{ $self->{params} },
+			$class->new(z0 => $z0, hz => $hz, params => \@params_cx);
 	}
 }
 
@@ -155,7 +161,7 @@ sub save
 	$fmt = uc($fmt);
 
 	print $out join("\n", @{ $self->{comments} // [] }) . "\n";
-	print $out "# MHz $self->{param} $fmt R $self->{zref}\n";
+	print $out "# MHz $self->{param} $fmt R $self->{z0}\n";
 	foreach my $meas (@{ $self->{params} })
 	{
 		print $out "" . ($meas->{hz}/1e6) . " " . $meas->tostring($fmt) . "\n";

@@ -9,7 +9,10 @@ use Data::Dumper;
 use Getopt::Long qw(:config bundling);
 
 use RF::S2P;
-use RF::S2P::Measurement;
+#use RF::S2P::Measurement;
+#use RF::S2P::Measurement::SParam;
+#use RF::S2P::Measurement::YParam;
+
 use Math::Complex;
 
 my %opts;
@@ -37,6 +40,15 @@ if (defined($opts{mhz}))
 	print $meas->tostring($opts{output_format}, $opts{pretty});
 	print "\n" if !$opts{pretty};
 	print "z-in: " . $meas->z_in(50) . "\n";
+	my $y = $meas->yparams;
+
+	printf "L=%f nH, C=%f pF, Q=%f Xl=%f Xc=%f X=%f\n",
+		$y->ind_nH,
+		$y->cap_pF,
+		$y->Q,
+		$y->Xl,
+		$y->Xc,
+		$y->X;
 }
 
 if ($opts{output})
