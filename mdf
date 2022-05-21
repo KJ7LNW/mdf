@@ -48,7 +48,7 @@ GetOptions(
 	"var-literal|L=s"	=> \$opts{var_literal},
 	"unique|u"		=> sub { $opts{unique} = 1 },
 	"not-unique|U"		=> sub { $opts{unique} = 0 },
-	"sort|s=s"		=> \$opts{sort}, # this should be removed.
+	"reverse_sort|r=s"	=> \$opts{reverse_sort}, 
 	"limit|l=s"		=> \$opts{limit},
 	"verbose|v"		=> sub {$opts{verbose}++},
 	"quiet|q"		=> \$opts{quiet},
@@ -84,7 +84,7 @@ if ($opts{octopart})
 		);
 }
 
-
+# $opts{sort} should be removed someday, this was for the old multi-var feature.
 $opts{sort} //= $opts{var_code};
 $opts{sort} //= $opts{var_literal};
 $opts{sort} =~ s/[=,].*$//;
@@ -215,7 +215,9 @@ else
 my $idx = 0;
 my %seller_counts;
 my %part_models;
-foreach my $file ( sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files )
+my @sorted_files = sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files ;
+@sorted_files = reverse @sorted_files if ($opts{reverse_sort});
+foreach my $file (@sorted_files)
 {
 	my $c = read_file($file);
 	
@@ -302,7 +304,7 @@ exit 0;
 
 sub usage
 {
-	print "usage: $0 [--unique] --var-code 'var_name=MODEL-(...)\.s2p' file1.s2p [file2...] > mymdf.mdf
+	print "usage: $0 [options] --var-code 'var_name=MODEL-(...)\.s2p' file1.s2p [file2...] -o mymdf.mdf
 
 --output|-o      <file>        Output filename, required.
 	If the filename is '-' then output will be written to stdout
@@ -322,12 +324,13 @@ Note that regular expressions matching filenames are always case-insensitive:
 	variable. Example:
 		--var-code 'C_pF=MODEL-(...)\.s2p'
 	
---var-literal|-L <code>        Either of --var-code or --var-literal are required.
+--var-literal|-L <regex>       Either of --var-code or --var-literal are required.
 	The var-literal version is the same as --var-code but does not
 	calcualte the code, it takes the value verbatim.  For example, some
 	inductors specify the number of turns in their s2p filename:
 		--var-literal 'L_turns=MODEL-([0-9]+)T\.s2p'
-	
+
+--reverse-sort|-r              Sort MDF values in reverse.
 
 --not-unique|-U                Make values NOT unique
 --unique|-u                    Make values unique (default)
@@ -371,6 +374,8 @@ Note that regular expressions matching filenames are always case-insensitive:
 	cached in ~/.octopart/cache/ to minimize redundant API requests but you
 	may wish to clear that directory out periodically since stock numbers will
 	become stale.
+
+	Get your API token here: https://octopart.com/api
 
 --octopart-filter|-F <filter_opts>    This option implies -O.
 	The <filter_opts> are comma-separated values passed to the
