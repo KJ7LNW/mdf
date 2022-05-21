@@ -41,9 +41,10 @@ sub inductance
 	my ($self) = @_;
 
 	my $hz = $self->hz;
-	my $y11i = Im($self->{params}[0]);
 
-	my $L = (1/$y11i) / (2*pi*$hz);
+	my $z11 = 1/$self->{params}[0]; # 1/y11
+
+	my $L = Im($z11) / (2*pi*$hz);
 
 	return $L;
 }
@@ -55,9 +56,9 @@ sub capacitance
 	my ($self) = @_;
 
 	my $hz = $self->hz;
-	my $y11i = Im($self->{params}[0]);
+	my $z11 = 1/$self->{params}[0]; # 1/y11
 
-	my $C = $y11i / (2*pi*$hz);
+	my $C = 1 / (Im($z11)*2*pi*$hz);
 
 	return $C;
 }
