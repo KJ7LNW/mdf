@@ -20,24 +20,24 @@ sub hz
 	return shift->{hz};
 }
 
-sub sdata
+sub params
 {
-	return @{ shift->{sdata} };
+	return @{ shift->{params} };
 }
 
 sub ri
 {
-	return map { [ Re($_), Im($_) ] } shift->sdata;
+	return map { [ Re($_), Im($_) ] } shift->params;
 }
 
 sub db_ang
 {
-	return map { [ 20*log(abs($_)), cang($_) ] } shift->sdata;
+	return map { [ 20*log(abs($_)), cang($_) ] } shift->params;
 }
 
 sub mag_ang
 {
-	return map { [ abs($_), cang($_) ] } shift->sdata;
+	return map { [ abs($_), cang($_) ] } shift->params;
 }
 
 # Input impedance.
@@ -48,7 +48,7 @@ sub z_in
 
 	$z0 //= 50;
 
-	my $s11 = $self->{sdata}[0];
+	my $s11 = $self->{params}[0];
 
 	return $z0 * (1+$s11)/(1-$s11);
 }
@@ -85,8 +85,9 @@ sub tostring
 	@data = $self->db_ang if $fmt eq 'db';
 	@data = $self->mag_ang if $fmt eq 'ma';
 	@data = $self->ri if $fmt eq 'ri';
-	@data = map { [$_] } $self->sdata if $fmt eq 'complex' or $fmt eq 'cx';
+	@data = map { [$_] } $self->params if $fmt eq 'complex' or $fmt eq 'cx';
 
+	my $pretty_param = $1 if ref($self) =~ /::([A-Z])Param/;
 	my $ret = '';
 	for (my $i = 1; $i <= 2; $i++)
 	{
@@ -95,7 +96,7 @@ sub tostring
 			my $d = shift @data;
 			if ($pretty)
 			{
-				$ret .= "S$j$i: [" . join(', ', @$d) . "]\n";
+				$ret .= "$pretty_param$j$i: [" . join(', ', @$d) . "]\n";
 			}
 			else
 			{

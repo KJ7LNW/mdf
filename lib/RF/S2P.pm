@@ -16,13 +16,13 @@ sub new
 	return $self;
 }
 
-sub sparam
+sub get_param
 {
 	my ($self, $hz) = @_;
 
 	my $prev;
 	my $cur;
-	for my $s (@{ $self->{sdata} })
+	for my $s (@{ $self->{params} })
 	{
 		$cur = $s;
 		#print "hz=$hz cur=" . $cur->hz . "\n";
@@ -38,8 +38,8 @@ sub sparam
 		
 	die "unable to find Hz for evaluation at $hz" if (!defined $prev);
 
-	my @prev = $prev->sdata;
-	my @cur = $cur->sdata;
+	my @prev = $prev->params;
+	my @cur = $cur->params;
 
 	my $prev_hz = $prev->hz;
 	my $cur_hz = $cur->hz;
@@ -61,8 +61,11 @@ sub sparam
 		push(@ret, RF::S2P::Measurement::interpolate($c1, $c2, $p));
 	}
 
-	return RF::S2P::SParam->new(hz => $hz, sdata => \@ret);
-
+	# if interpolated, instatiate a new class instance
+	# and make sure it is the same class type because
+	# 'params' could be S-, Y-, Z-params, etc.
+	my $class = ref($self);
+	return $class->new(hz => $hz, params => \@ret);
 }
 
 sub load
@@ -104,18 +107,18 @@ sub load
 		$self->{param} = $param;
 
 		$line =~ s/^\s+|\s+$//g;
-		my @sdata = split(/\s+/, $line);
-		my $hz = shift(@sdata);
-		my @sdata_cx;
+		my @params = split(/\s+/, $line);
+		my $hz = shift(@params);
+		my @params_cx;
 
-		foreach my $pair (pairs(@sdata))
+		foreach my $pair (pairs(@params))
 		{
-			push @sdata_cx, sdata_to_complex($fmt, @$pair);
+			push @params_cx, params_to_complex($fmt, @$pair);
 		}
 
 		$hz = scale_to_hz($funit, $hz);
 
-		push @{ $self->{sdata} }, RF::S2P::SParam->new(hz => $hz, sdata => \@sdata_cx);
+		push @{ $self->{params} }, RF::S2P::SParam->new(hz => $hz, params => \@params_cx);
 	}
 }
 
@@ -138,7 +141,7 @@ sub save
 
 	print $out join("\n", @{ $self->{comments} // [] }) . "\n";
 	print $out "# MHz $self->{param} $fmt R $self->{zref}\n";
-	foreach my $meas (@{ $self->{sdata} })
+	foreach my $meas (@{ $self->{params} })
 	{
 		print $out "" . ($meas->{hz}/1e6) . " " . $meas->tostring($fmt) . "\n";
 	}
@@ -166,7 +169,7 @@ sub scale_to_hz
 }
 
 # https://physics.stackexchange.com/questions/398988/converting-magnitude-ratio-to-complex-form
-sub sdata_to_complex
+sub params_to_complex
 {
 	my ($fmt, $a, $b) = @_;
 

@@ -33,7 +33,7 @@ $s2p->load($ARGV[0]);
 
 if (defined($opts{mhz}))
 {
-	my $meas = $s2p->sparam($opts{mhz} * 1e6);
+	my $meas = $s2p->get_param($opts{mhz} * 1e6);
 	print $meas->tostring($opts{output_format}, $opts{pretty});
 	print "\n" if !$opts{pretty};
 	print "z-in: " . $meas->z_in(50) . "\n";
