@@ -6,47 +6,61 @@ use warnings;
 
 use Math::Complex;
 use Math::Trig;
+use Data::Dumper;
+
+sub to_yparam { return shift; }
 
 sub from_sparam
 {
 	my ($class, $sparam) = @_;
 
-	my %h = %$sparam;
-
 	die "expected SParam class" if ref($sparam) ne 'RF::S2P::Measurement::SParam';
 
-	my $self = bless(\%h, $class);
+	my $S = $sparam->params;
 
-	my ($s11, $s21, $s12, $s22) = @{ $self->{params} };
+	my $sqrt_z = Math::Matrix::Complex->scalar(sqrt($sparam->z0), $S->nrow);
+	my $sqrt_y = $sqrt_z->inv();
+	my $id = Math::Matrix::Complex->id($S->nrow);
 
-	my $y0 = 1/$self->{z0};
-	my $delta_s = (1+$s11)*(1+$s22) - $s12*$s21;
-	die "delta_is 0, cannot compute Y-params" if ($delta_s == 0);
+	# https://en.wikipedia.org/wiki/Admittance_parameters
+	my $Y = $sqrt_y*($id-$S)*(($id+$S)->inv*$sqrt_y);
 
-	# Convert to Y-params:
-	# https://en.wikipedia.org/wiki/Admittance_parameters#Two_port
-	$self->{params} = [ 
-			$y0 * ((1-$s11)*(1+$s22)+$s12*$s21)/$delta_s, # Y11
-			$y0 * -2*$s12 / $delta_s,                     # Y12
-			$y0 * -2*$s21 / $delta_s,                     # Y21
-			$y0 * ((1+$s11)*(1-$s22)+$s12*$s21)/$delta_s, # Y22
-			 
-		];
+	my $self = $sparam->clone(__PACKAGE__, params => $Y);
+	$self->{params} = $Y;
 
 	return $self;
+}
+
+sub to_sparam
+{
+	my $self = shift;
+
+	return $self->{_sparam} if (defined($self->{_sparam}));
+
+	my $Y = $self->params;
+
+	my $sqrt_z = Math::Matrix::Complex->scalar(sqrt($self->z0), $Y->nrow);
+	my $sqrt_y = $sqrt_z->inv();
+	my $id = Math::Matrix::Complex->id($Y->nrow);
+
+	# https://en.wikipedia.org/wiki/Admittance_parameters
+	my $S = ($id-$sqrt_z*$Y*$sqrt_z)*($id+$sqrt_z*$Y*$sqrt_z)->inv;
+
+	$self->{_sparam} = $self->clone(__PACKAGE__, params => $S)
 }
 
 sub inductance
 {
 	my ($self) = @_;
 
-	my $hz = $self->hz;
+	return  -Im(1/$self->Y(1,2)) / (2*pi*$self->hz);
+}
 
-	my $z11 = 1/$self->{params}[0]; # 1/y11
+sub resistance
+{
+	my $self = shift;
 
-	my $L = Im($z11) / (2*pi*$hz);
-
-	return $L;
+	return -Re(1/$self->Y(1,2));
 }
 
 sub ind_nH { return shift->inductance * 1e9; }
@@ -55,12 +69,7 @@ sub capacitance
 {
 	my ($self) = @_;
 
-	my $hz = $self->hz;
-	my $z11 = 1/$self->{params}[0]; # 1/y11
-
-	my $C = 1 / (Im($z11)*2*pi*$hz);
-
-	return $C;
+	return Im($self->Y(1,1)) / (2*pi*$self->hz);
 }
 
 sub cap_pF { return shift->capacitance * 1e12; }
@@ -69,9 +78,7 @@ sub q_factor
 {
 	my ($self) = @_;
 
-	my $y11 = $self->{params}[0];
-
-	return -(Im($y11)/Re($y11));
+	return (2*pi*$self->hz) * ($self->inductance / $self->resistance)
 }
 
 sub Q { return shift->q_factor }

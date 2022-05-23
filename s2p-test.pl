@@ -15,12 +15,44 @@ use RF::S2P;
 
 use Math::Complex;
 
+$|++;
+
+$SIG{__DIE__} = \&backtrace;
+
+sub _build_stack
+{
+	my $i = 0;
+	my $stackoff = 1;
+
+	my @msg;
+	while (my @c = caller($i++)) {
+		my @c0     = caller($i);
+		my $caller = '';
+
+		$caller = " ($c0[3])" if (@c0);
+		push @msg, "  " . ($i - $stackoff) . ". $c[1]:$c[2]:$caller while calling $c[3]" if $i > $stackoff;
+	}
+
+	return reverse @msg;
+}
+
+sub backtrace
+{
+	my $self = shift;
+	my $fh = shift || \*STDERR;
+
+	foreach my $l (reverse _build_stack()) {
+		print $fh "$l\n";
+	}
+}
+
 my %opts;
 GetOptions(
-	"format|f=s" => \$opts{output_format},
+	"format|f=s"   => \$opts{output_format},
 	"eval-mhz|z=s" => \$opts{mhz},
-	"pretty|p" => \$opts{pretty},
-	"output|o=s" => \$opts{output},
+	"pretty|p"     => \$opts{pretty},
+	"output|o=s"   => \$opts{output},
+
 	#"" => \$opts{},
 ) or usage();
 
@@ -40,11 +72,12 @@ if (defined($opts{mhz}))
 	print $meas->tostring($opts{output_format}, $opts{pretty});
 	print "\n" if !$opts{pretty};
 	print "z-in: " . $meas->z_in(50) . "\n";
-	my $y = $meas->yparams;
+	my $y = $meas->to_yparam;
 
-	printf "L=%f nH, C=%f pF, Q=%f Xl=%f Xc=%f X=%f\n",
+	printf "L=%f nH, C=%f pF, R=%f, Q=%f Xl=%f Xc=%f X=%f\n",
 		$y->ind_nH,
 		$y->cap_pF,
+		$y->resistance,
 		$y->Q,
 		$y->Xl,
 		$y->Xc,

@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Math::Complex;
+use Math::Matrix::Complex;
 use Data::Dumper;
 
 use RF::S2P::Measurement::SParam;
@@ -40,9 +41,6 @@ sub get_param
 		
 	die "unable to find Hz for evaluation at $hz" if (!defined $prev);
 
-	my @prev = $prev->params;
-	my @cur = $cur->params;
-
 	my $prev_hz = $prev->hz;
 	my $cur_hz = $cur->hz;
 
@@ -52,16 +50,10 @@ sub get_param
 	my $hz_diff = $cur_hz - $prev_hz;
 	my $hz_off = $hz - $prev_hz;
 
-	my @ret;
+	# Return the complex matrix scaled $p percent of the way between $prev and $cur:
+	# https://math.stackexchange.com/q/4451400/983059
 	my $p = ($hz - $prev_hz)/$hz_diff;
-	#print "pct=$p\n";
-	while (@prev)
-	{
-		my $c1 = shift @prev;
-		my $c2 = shift @cur;
-
-		push(@ret, RF::S2P::Measurement::interpolate($c1, $c2, $p));
-	}
+	my $ret = (1-$p)*$prev->params + $p*$cur->params;
 
 	# if interpolated, instatiate a new class instance
 	# and make sure it is the same class type because
@@ -70,7 +62,7 @@ sub get_param
 	my %opts = %$cur;
 	delete $opts{params};
 	delete $opts{hz};
-	return $class->new(%opts, hz => $hz, params => \@ret);
+	return $class->new(%opts, hz => $hz, params => $ret);
 }
 
 sub load
@@ -124,8 +116,6 @@ sub load
 			$class = 'RF::S2P::Measurement';
 		}
 
-
-
 		$line =~ s/^\s+|\s+$//g;
 		my @params = split(/\s+/, $line);
 		my $hz = shift(@params);
@@ -138,8 +128,23 @@ sub load
 
 		$hz = scale_to_hz($funit, $hz);
 
+		my $n_ports = sqrt(scalar @params_cx);
+
+		#my $m = Math::Matrix->new(map {[]} (1..$n_ports));
+
+		my $m = [];
+		for (my $i = 0; $i < $n_ports; $i++)
+		{
+			for (my $j = 0; $j < $n_ports; $j++)
+			{
+				$m->[$j][$i] = shift @params_cx;
+			}
+		}
+
+		$m = Math::Matrix::Complex->new($m);
+
 		push @{ $self->{params} },
-			$class->new(z0 => $z0, hz => $hz, params => \@params_cx);
+			$class->new(z0 => $z0, hz => $hz, params => $m);
 	}
 }
 
