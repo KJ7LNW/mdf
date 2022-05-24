@@ -9,6 +9,7 @@ use Math::Trig;
 use Data::Dumper;
 
 sub to_yparam { return shift; }
+sub from_yparam { return shift; }
 
 sub from_sparam
 {
@@ -26,7 +27,6 @@ sub from_sparam
 	my $Y = $sqrt_y*($id-$S)*(($id+$S)->inv*$sqrt_y);
 
 	my $self = $sparam->clone(__PACKAGE__, params => $Y);
-	$self->{params} = $Y;
 
 	return $self;
 }
@@ -46,7 +46,9 @@ sub to_sparam
 	# https://en.wikipedia.org/wiki/Admittance_parameters
 	my $S = ($id-$sqrt_z*$Y*$sqrt_z)*($id+$sqrt_z*$Y*$sqrt_z)->inv;
 
-	$self->{_sparam} = $self->clone(__PACKAGE__, params => $S)
+	$self->{_sparam} = $self->clone('RF::S2P::Measurement::SParam', params => $S);
+
+	return $self->{_sparam};
 }
 
 sub inductance
