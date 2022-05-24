@@ -7,6 +7,7 @@ use Math::Complex;
 use Math::Trig;
 use RF::S2P::Measurement::SParam;
 use RF::S2P::Measurement::YParam;
+use RF::S2P::Measurement::TParam;
 
 use Data::Dumper;
 
@@ -46,21 +47,25 @@ sub z0 { return shift->{z0}; }
 sub hz { return shift->{hz}; }
 
 
-# These should be overloaded in the S/Y/ZParam.pm modules:
-sub to_sparam { die "to_sparam: not implemented in " . ref(shift); }
 
-sub to_yparam
+sub to_X_param
 {
-	my $self = shift;
+	my ($self, $type) = @_;
 
-	return $self->{_yparams} if defined($self->{_yparams});
+	$type = uc($type);
 
-	$self->{_yparams} = RF::S2P::Measurement::YParam->from_sparam($self->to_sparam);
+	my $class = "RF::S2P::Measurement::${type}Param";
 
-	return $self->{_yparams};
+	return $class->from_sparam($self->to_sparam);
 }
 
-sub to_zparam { die "to_zparam: not implemented in " . ref(shift); }
+# to_sparam and from_sparam must be implemented in each class.  
+# Subclassing from/to_y/z/tparam() functions is optional:
+sub to_sparam { die "to_sparam: not implemented in " . ref(shift); }
+
+sub to_yparam { return shift->to_X_param('y'); }
+sub to_zparam { return shift->to_X_param('z'); }
+sub to_tparam { return shift->to_X_param('t'); }
 
 sub from_sparam { die "from_sparam: not implemented in " . ref(shift); }
 sub from_zparam { die "from_zparam: not implemented in " . ref(shift); }
@@ -104,6 +109,7 @@ sub params
 sub S { return shift->to_sparam->params(@_) }
 sub Y { return shift->to_yparam->params(@_) }
 sub Z { return shift->to_zparam->params(@_) }
+sub T { return shift->to_tparam->params(@_) }
 
 # Functions converting to flat arrays in touchstone-format column-major order:
 sub params_array
