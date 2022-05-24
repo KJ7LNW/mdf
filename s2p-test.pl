@@ -9,9 +9,6 @@ use Data::Dumper;
 use Getopt::Long qw(:config bundling);
 
 use RF::S2P;
-#use RF::S2P::Measurement;
-#use RF::S2P::Measurement::SParam;
-#use RF::S2P::Measurement::YParam;
 
 use Math::Complex;
 
@@ -48,11 +45,11 @@ sub backtrace
 
 my %opts;
 GetOptions(
-	"format|f=s"   => \$opts{output_format},
-	"eval-mhz|z=s" => \$opts{mhz},
-	"pretty|p"     => \$opts{pretty},
-	"output|o=s"   => \$opts{output},
-
+	"mhz|f=s"             => \$opts{mhz},
+	"pretty|p"            => \$opts{pretty},
+	"output|o=s"          => \$opts{output},
+	"output-format|O=s"   => \$opts{output_format},
+	"test|t"              => \$opts{test}
 	#"" => \$opts{},
 ) or usage();
 
@@ -82,7 +79,21 @@ if (defined($opts{mhz}))
 		$y->Xl,
 		$y->Xc,
 		$y->X;
+
+	if (defined($opts{test}))
+	{
+		printf "S->S->S error: %g\n", abs($meas->S - $meas->to_sparam->S)->to_row->sum;
+		printf "Y->S->Y error: %g\n", abs($meas->Y - $meas->to_sparam->Y)->to_row->sum;
+		printf "T->S->T error: %g\n", abs($meas->T - $meas->to_sparam->T)->to_row->sum;
+		printf "S->Y->S error: %g\n", abs($meas->S - $meas->to_yparam->S)->to_row->sum;
+		printf "S->T->S error: %g\n", abs($meas->S - $meas->to_tparam->S)->to_row->sum;
+		printf "T->S->Y->T error: %g\n", abs($meas->T - $meas->to_sparam->to_yparam->T)->to_row->sum;
+		printf "T->Y->S->T error: %g\n", abs($meas->T - $meas->to_yparam->to_sparam->T)->to_row->sum;
+		printf "S->Y->T->S error: %g\n", abs($meas->S - $meas->to_yparam->to_tparam->S)->to_row->sum;
+		printf "S->T->Y->S error: %g\n", abs($meas->S - $meas->to_tparam->to_yparam->S)->to_row->sum;
+	}
 }
+
 
 if ($opts{output})
 {
@@ -96,6 +107,6 @@ exit 0;
 
 sub usage
 {
-	print "usage: $0 [--eval-mhz <146.52> [--pretty]] [--format <db|ma|ri|cx>] [--output <outfile.s2p>] <input.s2p>\n";
+	print "usage: $0 [--mhz <146.52> [--pretty]] [--output-format <db|ma|ri|cx>] [--output <outfile.s2p>] <input.s2p>\n";
 	exit 1;
 }
