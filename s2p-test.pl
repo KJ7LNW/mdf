@@ -83,6 +83,7 @@ if (defined($opts{mhz}))
 	if (defined($opts{test}))
 	{
 		printf "S->S->S error: %g\n", abs($meas->S - $meas->to_sparam->S)->to_row->sum;
+		printf "S->Z->S error: %g\n", abs($meas->S - $meas->to_zparam->S)->to_row->sum;
 		printf "Y->S->Y error: %g\n", abs($meas->Y - $meas->to_sparam->Y)->to_row->sum;
 		printf "T->S->T error: %g\n", abs($meas->T - $meas->to_sparam->T)->to_row->sum;
 		printf "S->Y->S error: %g\n", abs($meas->S - $meas->to_yparam->S)->to_row->sum;
