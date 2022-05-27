@@ -14,9 +14,9 @@ sub from_sparam { my ($class, $sparam) = @_; return $sparam; }
 # https://electronics.stackexchange.com/a/620447
 sub z_in
 {
-	my ($self, $z0) = @_;
+	my ($self) = @_;
 
-	$z0 //= 50;
+	my $z0 = $self->z0;
 
 	my $s11 = $self->S(1,1);
 

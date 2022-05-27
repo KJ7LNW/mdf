@@ -69,7 +69,7 @@ if (defined($opts{mhz}))
 	my $meas = $s2p->get_param($opts{mhz} * 1e6);
 	print $meas->tostring($opts{output_format}, $opts{pretty});
 	print "\n" if !$opts{pretty};
-	print "z-in: " . $meas->z_in(50) . "\n";
+	print "z-in: " . $meas->to_sparam->z_in() . "\n";
 	my $y = $meas->to_yparam;
 
 	printf "L=%f nH, C=%f pF, R=%f, Q=%f Xl=%f Xc=%f X=%f\n",
