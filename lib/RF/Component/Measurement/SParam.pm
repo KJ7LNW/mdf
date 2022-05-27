@@ -1,5 +1,5 @@
-package RF::S2P::Measurement::SParam;
-use parent 'RF::S2P::Measurement';
+package RF::Component::Measurement::SParam;
+use parent 'RF::Component::Measurement';
 
 use strict;
 use warnings;

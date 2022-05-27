@@ -1,5 +1,5 @@
-package RF::S2P::Measurement::YParam;
-use parent 'RF::S2P::Measurement';
+package RF::Component::Measurement::YParam;
+use parent 'RF::Component::Measurement';
 
 use strict;
 use warnings;
@@ -15,7 +15,7 @@ sub from_sparam
 {
 	my ($class, $sparam) = @_;
 
-	die "expected SParam class" if ref($sparam) ne 'RF::S2P::Measurement::SParam';
+	die "expected SParam class" if ref($sparam) ne 'RF::Component::Measurement::SParam';
 
 	my $S = $sparam->params;
 
@@ -53,7 +53,7 @@ sub to_sparam
 	# https://en.wikipedia.org/wiki/Admittance_parameters
 	my $S = ($id-$sqrt_z*$Y*$sqrt_z)*($id+$sqrt_z*$Y*$sqrt_z)->inv;
 
-	$self->{_sparam} = $self->clone('RF::S2P::Measurement::SParam', params => $S);
+	$self->{_sparam} = $self->clone('RF::Component::Measurement::SParam', params => $S);
 
 	return $self->{_sparam};
 }

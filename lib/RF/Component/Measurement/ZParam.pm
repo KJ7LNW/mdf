@@ -1,5 +1,5 @@
-package RF::S2P::Measurement::ZParam;
-use parent 'RF::S2P::Measurement';
+package RF::Component::Measurement::ZParam;
+use parent 'RF::Component::Measurement';
 
 use strict;
 use warnings;
@@ -15,7 +15,7 @@ sub from_sparam
 {
 	my ($class, $sparam) = @_;
 
-	die "expected SParam class" if ref($sparam) ne 'RF::S2P::Measurement::SParam';
+	die "expected SParam class" if ref($sparam) ne 'RF::Component::Measurement::SParam';
 
 	my $S = $sparam->params;
 
@@ -55,7 +55,7 @@ sub to_sparam
 	# a smaller S->Z->S conversion error.  This may not always hold true,
 	# but it does for the Coilcraft 0402DC-121 inductor and the Murata
 	# GQM1555C2D100JB01 capacitor:
-	my $Y = $self->clone('RF::S2P::Measurement::YParam', params =>
+	my $Y = $self->clone('RF::Component::Measurement::YParam', params =>
 	$Z->inv);
 	$self->{_sparam} = $Y->to_sparam;
 
@@ -70,7 +70,7 @@ sub to_sparam
 	#my $S = ($sqrt_y*$Z* $sqrt_y - $id) * (($sqrt_y*$Z*$sqrt_y + $id)->inv());
 	#my $S = (($sqrt_y*$Z* $sqrt_y + $id)->inv()) * ($sqrt_y*$Z*$sqrt_y - $id);
 	#my $S = $G_ref * ($Z - $z0) * ($Z+$z0)->inv() * (1/$G_ref);
-	#$self->{_sparam} = $self->clone('RF::S2P::Measurement::SParam', params => $S);
+	#$self->{_sparam} = $self->clone('RF::Component::Measurement::SParam', params => $S);
 
 	return $self->{_sparam};
 }

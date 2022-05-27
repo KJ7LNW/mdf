@@ -1,14 +1,14 @@
-package RF::S2P::Measurement;
+package RF::Component::Measurement;
 
 use strict;
 use warnings;
 
 use Math::Complex;
 use Math::Trig;
-use RF::S2P::Measurement::SParam;
-use RF::S2P::Measurement::YParam;
-use RF::S2P::Measurement::ZParam;
-use RF::S2P::Measurement::TParam;
+use RF::Component::Measurement::SParam;
+use RF::Component::Measurement::YParam;
+use RF::Component::Measurement::ZParam;
+use RF::Component::Measurement::TParam;
 
 use Data::Dumper;
 
@@ -55,7 +55,7 @@ sub to_X_param
 
 	$type = uc($type);
 
-	my $class = "RF::S2P::Measurement::${type}Param";
+	my $class = "RF::Component::Measurement::${type}Param";
 
 	return $class->from_sparam($self->to_sparam);
 }
@@ -75,7 +75,7 @@ sub from_yparam { die "from_yparam: not implemented in " . ref(shift); }
 # srf: Self-resonating frequency.
 #
 # This may not be accurate.  While the equasion is a classic
-# SRF calculation (1/(2*pi*sqrt(LC)), srf should instead be an RF::S2P function and 
+# SRF calculation (1/(2*pi*sqrt(LC)), srf should instead be an RF::Component function and
 # scan the frequency lines as follows:
 #    "The SRF is determined to be the fre-quency at which the insertion (S21)
 #    phase changes from negative through zero to positive."

@@ -1,4 +1,4 @@
-package RF::S2P;
+package RF::Touchstone;
 
 use strict;
 use warnings;
@@ -7,9 +7,9 @@ use Math::Complex;
 use Math::Matrix::Complex;
 use Data::Dumper;
 
-use RF::S2P::Measurement;
-use RF::S2P::Measurement::SParam;
-use RF::S2P::Measurement::YParam;
+use RF::Component::Measurement;
+use RF::Component::Measurement::SParam;
+use RF::Component::Measurement::YParam;
 
 sub new
 {
@@ -102,22 +102,22 @@ sub load
 		$self->{param_type} = $param;
 
 		if ($self->{param_type} eq 'S') {
-			$class = 'RF::S2P::Measurement::SParam';
+			$class = 'RF::Component::Measurement::SParam';
 		}
 		elsif ($self->{param_type} eq 'Y') {
-			$class = 'RF::S2P::Measurement::YParam';
+			$class = 'RF::Component::Measurement::YParam';
 		}
 		elsif ($self->{param_type} eq 'Z') {
-			$class = 'RF::S2P::Measurement::ZParam';
+			$class = 'RF::Component::Measurement::ZParam';
 		}
 		elsif ($self->{param_type} eq 'T') {
 			# T is not a standard s2p matrix type, but we can load it:
-			$class = 'RF::S2P::Measurement::TParam';
+			$class = 'RF::Component::Measurement::TParam';
 		}
 		else
 		{
 			warn "$self->{param_type}-parameter type is not implemented, using base class.";
-			$class = 'RF::S2P::Measurement';
+			$class = 'RF::Component::Measurement';
 		}
 
 		$line =~ s/^\s+|\s+$//g;

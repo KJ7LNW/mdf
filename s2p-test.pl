@@ -8,7 +8,7 @@ use lib 'lib';
 use Data::Dumper;
 use Getopt::Long qw(:config bundling);
 
-use RF::S2P;
+use RF::Touchstone;
 
 use Math::Complex;
 
@@ -60,7 +60,7 @@ $opts{output_format} //= 'db';
 $opts{output_format} = lc($opts{output_format});
 
 
-my $s2p = RF::S2P->new;
+my $s2p = RF::Touchstone->new;
 
 $s2p->load($ARGV[0]);
 
