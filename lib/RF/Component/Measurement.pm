@@ -72,21 +72,6 @@ sub from_sparam { die "from_sparam: not implemented in " . ref(shift); }
 sub from_zparam { die "from_zparam: not implemented in " . ref(shift); }
 sub from_yparam { die "from_yparam: not implemented in " . ref(shift); }
 
-# srf: Self-resonating frequency.
-#
-# This may not be accurate.  While the equasion is a classic
-# SRF calculation (1/(2*pi*sqrt(LC)), srf should instead be an RF::Component function and
-# scan the frequency lines as follows:
-#    "The SRF is determined to be the fre-quency at which the insertion (S21)
-#    phase changes from negative through zero to positive."
-#    [ https://www.coilcraft.com/getmedia/8ef1bd18-d092-40e8-a3c8-929bec6adfc9/doc363_measuringsrf.pdf ]
-sub srf
-{
-	my $self = shift;
-
-	return 1/sqrt( abs 2*pi*$self->inductance*$self->capacitance);
-}
-
 # For example, to get S21:
 #   $s21 = $self->params(2,1) 
 #
@@ -175,6 +160,79 @@ sub tostring
 	}
 
 	return $ret;
+}
+
+sub inductance
+{
+	my ($self) = @_;
+
+	return  -Im(1/$self->Y(1,2)) / (2*pi*$self->hz);
+}
+
+sub resistance
+{
+	my $self = shift;
+
+	return -Re(1/$self->Y(1,2));
+}
+
+sub ind_nH { return shift->inductance * 1e9; }
+
+sub capacitance
+{
+	my ($self) = @_;
+
+	return Im($self->Y(1,1)) / (2*pi*$self->hz);
+}
+
+sub cap_pF { return shift->capacitance * 1e12; }
+
+sub q_factor
+{
+	my ($self) = @_;
+
+	return (2*pi*$self->hz) * ($self->inductance / $self->resistance)
+}
+
+sub Q { return shift->q_factor }
+
+sub reactance_l
+{
+	my $self = shift;
+
+	return 2*pi*$self->hz*$self->inductance;
+}
+
+sub reactance_c
+{
+	my $self = shift;
+
+	return 1.0/(2*pi*$self->hz*$self->capacitance);
+}
+
+sub reactance
+{
+	my $self = shift;
+	return $self->reactance_l - $self->reactance_c;
+}
+
+sub X { return shift->reactance; }
+sub Xl { return shift->reactance_l; }
+sub Xc { return shift->reactance_c; }
+
+# srf: Self-resonating frequency.
+#
+# This may not be accurate.  While the equasion is a classic
+# SRF calculation (1/(2*pi*sqrt(LC)), srf should instead be an RF::Component function and
+# scan the frequency lines as follows:
+#    "The SRF is determined to be the fre-quency at which the insertion (S21)
+#    phase changes from negative through zero to positive."
+#    [ https://www.coilcraft.com/getmedia/8ef1bd18-d092-40e8-a3c8-929bec6adfc9/doc363_measuringsrf.pdf ]
+sub srf
+{
+	my $self = shift;
+
+	return 1/sqrt( abs 2*pi*$self->inductance*$self->capacitance);
 }
 
 # Helper functions
