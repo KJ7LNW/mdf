@@ -49,6 +49,7 @@ GetOptions(
 	"pretty|p"            => \$opts{pretty},
 	"output|o=s"          => \$opts{output},
 	"output-format|O=s"   => \$opts{output_format},
+	"output-param|P=s"   => \$opts{output_param},
 	"test|t"              => \$opts{test}
 	#"" => \$opts{},
 ) or usage();
@@ -98,7 +99,7 @@ if (defined($opts{mhz}))
 
 if ($opts{output})
 {
-	$s2p->save($opts{output}, $opts{output_format});
+	$s2p->save($opts{output}, $opts{output_format}, $opts{output_param});
 }
 
 exit 0;
@@ -108,6 +109,6 @@ exit 0;
 
 sub usage
 {
-	print "usage: $0 [--mhz <146.52> [--pretty]] [--output-format <db|ma|ri|cx>] [--output <outfile.s2p>] <input.s2p>\n";
+	print "usage: $0 [--mhz <146.52> [--pretty]] [--output-format <db|ma|ri|cx>] [--output-param <s|y|z> [--output <outfile.s2p>] <input.s2p>\n";
 	exit 1;
 }

@@ -26,6 +26,13 @@ sub from_sparam
 	# https://en.wikipedia.org/wiki/Admittance_parameters
 	my $Y = $sqrt_y*($id-$S)*(($id+$S)->inv*$sqrt_y);
 
+	# http://qucs.sourceforge.net/tech/node98.html
+	# Alternate Y calculation:
+	#my $z_ref = Math::Matrix::Complex->scalar($sparam->z0, $S->nrow);
+	#my $g_ref = Math::Matrix::Complex->scalar((1/sqrt(Re($sparam->z0))), $S->nrow);
+	#my $Y = $g_ref->inv*($S*$z_ref+$z_ref)->inv() * ($id-$S)*$g_ref;
+	#my $Y = $g_ref->inv*$z_ref->inv*($S+$id)->inv() * ($id-$S)*$g_ref;
+
 	my $self = $sparam->clone(__PACKAGE__, params => $Y);
 
 	return $self;

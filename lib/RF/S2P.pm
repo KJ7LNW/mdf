@@ -7,6 +7,7 @@ use Math::Complex;
 use Math::Matrix::Complex;
 use Data::Dumper;
 
+use RF::S2P::Measurement;
 use RF::S2P::Measurement::SParam;
 use RF::S2P::Measurement::YParam;
 
@@ -96,7 +97,6 @@ sub load
 			($funit, $param, $fmt, $R, $z0) = split /\s+/, $line;
 
 			die "z0 != 50 ohms: $z0" if $z0 != 50;
-			die "param != S: $param" if $param ne 'S';
 			die "R != R: $R" if $R ne 'R';
 			next;
 		}
@@ -109,6 +109,13 @@ sub load
 		}
 		elsif ($self->{param_type} eq 'Y') {
 			$class = 'RF::S2P::Measurement::YParam';
+		}
+		elsif ($self->{param_type} eq 'Z') {
+			$class = 'RF::S2P::Measurement::ZParam';
+		}
+		elsif ($self->{param_type} eq 'T') {
+			# T is not a standard s2p matrix type, but we can load it:
+			$class = 'RF::S2P::Measurement::TParam';
 		}
 		else
 		{
@@ -150,7 +157,7 @@ sub load
 
 sub save
 {
-	my ($self, $fn, $fmt) = @_;
+	my ($self, $fn, $fmt, $type) = @_;
 
 	open(my $out, '>', $fn) or die "$fn: $!";
 
@@ -165,10 +172,14 @@ sub save
 	die "unknown format: $fmt" if (!defined($fmts{$fmt}));
 	$fmt = uc($fmt);
 
+	$type //= 'S';
+	$type = uc($type); # S, Y, Z, H, G
+
 	print $out join("\n", @{ $self->{comments} // [] }) . "\n";
-	print $out "# MHz $self->{param} $fmt R $self->{z0}\n";
+	print $out "# MHz $type $fmt R $self->{z0}\n";
 	foreach my $meas (@{ $self->{params} })
 	{
+		$meas = $meas->to_X_param($type);
 		print $out "" . ($meas->{hz}/1e6) . " " . $meas->tostring($fmt) . "\n";
 	}
 	close($out);
@@ -206,6 +217,10 @@ sub params_to_complex
 
 		'MA' => sub {
 				return Math::Complex->make($a*cos($b*pi()/180), $a*sin($b*pi()/180));
+			},
+		'DB' => sub {
+				my $mag = 10**($a/20);
+				return Math::Complex->make($mag*cos($b*pi()/180), $mag*sin($b*pi()/180));
 			}
 	);
 
