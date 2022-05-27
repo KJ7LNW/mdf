@@ -125,7 +125,7 @@ sub ri
 
 sub db_ang
 {
-	return map { [ 20*log(abs($_)), cang($_) ] } shift->params_array;
+	return map { [ 20*log(abs($_))/log(10), cang($_) ] } shift->params_array;
 }
 
 sub mag_ang
