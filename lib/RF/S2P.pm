@@ -38,6 +38,7 @@ sub get_param
 		$prev = $cur;
 	}
 
+	# Exact match, return this one:
 	return $cur if ($cur->hz == $hz);
 		
 	die "unable to find Hz for evaluation at $hz" if (!defined $prev);
@@ -56,14 +57,10 @@ sub get_param
 	my $p = ($hz - $prev_hz)/$hz_diff;
 	my $ret = (1-$p)*$prev->params + $p*$cur->params;
 
-	# if interpolated, instatiate a new class instance
+	# If interpolated, instatiate a new class instance
 	# and make sure it is the same class type because
 	# 'params' could be S-, Y-, Z-params, etc.
-	my $class = ref($cur);
-	my %opts = %$cur;
-	delete $opts{params};
-	delete $opts{hz};
-	return $class->new(%opts, hz => $hz, params => $ret);
+	return $cur->clone(ref($cur), hz => $hz, params => $ret);
 }
 
 sub load
