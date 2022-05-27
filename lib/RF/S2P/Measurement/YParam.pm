@@ -9,7 +9,7 @@ use Math::Trig;
 use Data::Dumper;
 
 sub to_yparam { return shift; }
-sub from_yparam { return shift; }
+sub from_yparam { my ($class, $yparam) = @_; return $yparam; }
 
 sub from_sparam
 {

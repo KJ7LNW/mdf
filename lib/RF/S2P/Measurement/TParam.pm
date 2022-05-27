@@ -8,7 +8,7 @@ use Math::Complex;
 use Math::Trig;
 
 sub to_tparam { return shift; }
-sub from_tparam { return shift; }
+sub from_tparam { my ($class, $tparam) = @_; return $tparam; }
 
 sub from_sparam
 {
