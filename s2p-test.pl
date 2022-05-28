@@ -9,6 +9,7 @@ use Data::Dumper;
 use Getopt::Long qw(:config bundling);
 
 use RF::Touchstone;
+use RF::Component::Measurement::AParam;
 
 use Math::Complex;
 
@@ -67,32 +68,47 @@ $s2p->load($ARGV[0]);
 if (defined($opts{mhz}))
 {
 	my $meas = $s2p->get_param($opts{mhz} * 1e6);
-	print $meas->tostring($opts{output_format}, $opts{pretty});
-	print "\n" if !$opts{pretty};
-	print "z-in: " . $meas->to_sparam->z_in() . "\n";
-	my $y = $meas->to_yparam;
 
-	printf "L=%f nH, C=%f pF, R=%f, Q=%f Xl=%f Xc=%f X=%f\n",
-		$y->ind_nH,
-		$y->cap_pF,
-		$y->resistance,
-		$y->Q,
-		$y->Xl,
-		$y->Xc,
-		$y->X;
+	#$meas = $meas->serial($meas->serial_to_shunt);
+	#$meas = $meas->serial($meas);
+	#$meas = $meas->parallel($meas->to_shunt);
+	#$meas = $meas->parallel($meas);
+
+	print "S-Parameters at $opts{mhz} MHz:\n";
+	printf "\tInput impedance Zin (S11): " . $meas->z_in() . "\n";
+	print $meas->to_sparam->tostring($opts{output_format}, "\t");
+
+	printf "\nY-Parameter Calculations (Y12):\n";
+	printf "\tL=%-3.2f nH\n", $meas->ind_nH;
+	printf "\tC=%-3.2f pF\n", $meas->cap_pF;
+	printf "\tR=%-3.2f Ohms\n", $meas->resistance;
+	printf "\tQ=%-3.2f\n", $meas->Q;
+	printf "\tXl=%-3.2f     Xc=%-3.2f     X=%-3.2f (X=XL-XC)\n",
+		$meas->Xl,
+		$meas->Xc,
+		$meas->X;
+
+	printf "\nABCD Calculations:\n";
+	printf "  short circuit: %d\n", $meas->is_short_circuit(1e-3);
+	printf "   open circuit: %d\n", $meas->is_open_circuit(1e-3);
+	printf "    symmetrical: %d\n", $meas->is_symmetrical(1e-3);
+	printf "     reciprocal: %d\n", $meas->is_reciprocal(1e-3);
+	printf "       lossless: %d\n", $meas->is_lossless(1e-3);
 
 	if (defined($opts{test}))
 	{
-		printf "S->S->S error: %g\n", abs($meas->S - $meas->to_sparam->S)->to_row->sum;
-		printf "S->Z->S error: %g\n", abs($meas->S - $meas->to_zparam->S)->to_row->sum;
-		printf "Y->S->Y error: %g\n", abs($meas->Y - $meas->to_sparam->Y)->to_row->sum;
-		printf "T->S->T error: %g\n", abs($meas->T - $meas->to_sparam->T)->to_row->sum;
-		printf "S->Y->S error: %g\n", abs($meas->S - $meas->to_yparam->S)->to_row->sum;
-		printf "S->T->S error: %g\n", abs($meas->S - $meas->to_tparam->S)->to_row->sum;
-		printf "T->S->Y->T error: %g\n", abs($meas->T - $meas->to_sparam->to_yparam->T)->to_row->sum;
-		printf "T->Y->S->T error: %g\n", abs($meas->T - $meas->to_yparam->to_sparam->T)->to_row->sum;
-		printf "S->Y->T->S error: %g\n", abs($meas->S - $meas->to_yparam->to_tparam->S)->to_row->sum;
-		printf "S->T->Y->S error: %g\n", abs($meas->S - $meas->to_tparam->to_yparam->S)->to_row->sum;
+		printf "\nConversion error summary, smaller is better:\n";
+		printf "        S->S->S error: %g\n", abs($meas->S - $meas->to_sparam->S)->to_row->sum;
+		printf "        S->Z->S error: %g\n", abs($meas->S - $meas->to_zparam->S)->to_row->sum;
+		printf "        S->Y->S error: %g\n", abs($meas->S - $meas->to_yparam->S)->to_row->sum;
+		printf "        S->T->S error: %g\n", abs($meas->S - $meas->to_tparam->S)->to_row->sum;
+		printf "     S->ABCD->S error: %g\n", abs($meas->S - $meas->to_aparam->S)->to_row->sum;
+		printf "     T->S->Y->T error: %g\n", abs($meas->T - $meas->to_sparam->to_yparam->T)->to_row->sum;
+		printf "     T->Y->S->T error: %g\n", abs($meas->T - $meas->to_yparam->to_sparam->T)->to_row->sum;
+		printf "     S->Y->T->S error: %g\n", abs($meas->S - $meas->to_yparam->to_tparam->S)->to_row->sum;
+		printf "     S->T->Y->S error: %g\n", abs($meas->S - $meas->to_tparam->to_yparam->S)->to_row->sum;
+		printf "     S->shunt->serial->S error: %g\n",
+			abs($meas->S - $meas->serial_to_shunt->shunt_to_serial->S)->to_row->sum;
 	}
 }
 
