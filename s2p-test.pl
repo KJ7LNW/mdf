@@ -70,7 +70,7 @@ if (defined($opts{mhz}))
 	my $meas = $s2p->get_param($opts{mhz} * 1e6);
 
 	#$meas = $meas->serial($meas->serial_to_shunt);
-	#$meas = $meas->serial($meas);
+	#$meas = $meas->serial($meas, $meas);
 	#$meas = $meas->parallel($meas->to_shunt);
 	#$meas = $meas->parallel($meas);
 
@@ -79,6 +79,7 @@ if (defined($opts{mhz}))
 	print $meas->to_sparam->tostring($opts{output_format}, "\t");
 
 	printf "\nY-Parameter Calculations (Y12):\n";
+	print $meas->to_yparam->tostring($opts{output_format}, "\t");
 	printf "\tL=%-3.2f nH\n", $meas->ind_nH;
 	printf "\tC=%-3.2f pF\n", $meas->cap_pF;
 	printf "\tR=%-3.2f Ohms\n", $meas->resistance;
@@ -88,12 +89,19 @@ if (defined($opts{mhz}))
 		$meas->Xc,
 		$meas->X;
 
+	printf "\nZ-Parameters:\n";
+	print $meas->to_zparam->tostring($opts{output_format}, "\t");
+
 	printf "\nABCD Calculations:\n";
+	print $meas->to_aparam->tostring($opts{output_format}, "\t");
 	printf "  short circuit: %d\n", $meas->is_short_circuit(1e-3);
 	printf "   open circuit: %d\n", $meas->is_open_circuit(1e-3);
 	printf "    symmetrical: %d\n", $meas->is_symmetrical(1e-3);
 	printf "     reciprocal: %d\n", $meas->is_reciprocal(1e-3);
 	printf "       lossless: %d\n", $meas->is_lossless(1e-3);
+
+	printf "\nABCD Shunt Matrix:\n";
+	print $meas->serial_to_shunt->tostring($opts{output_format}, "\t");
 
 	if (defined($opts{test}))
 	{
@@ -111,7 +119,6 @@ if (defined($opts{mhz}))
 			abs($meas->S - $meas->serial_to_shunt->shunt_to_serial->S)->to_row->sum;
 	}
 }
-
 
 if ($opts{output})
 {

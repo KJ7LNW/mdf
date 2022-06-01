@@ -19,6 +19,8 @@ sub new
 {
 	my ($class, %args) = @_;
 
+	die "$class is not intended to be used directly, instantiate a subclass instead." if ($class eq __PACKAGE__);
+
 	foreach (keys %args)
 	{
 		die "$class: invalid class option: $_ => $args{$_}" if !defined($valid_opts{$_});
