@@ -61,13 +61,11 @@ $opts{output_format} //= 'db';
 $opts{output_format} = lc($opts{output_format});
 
 
-my $s2p = RF::Touchstone->new;
-
-$s2p->load($ARGV[0]);
+my $comp = RF::Touchstone::load($ARGV[0]);
 
 if (defined($opts{mhz}))
 {
-	my $meas = $s2p->get_param($opts{mhz} * 1e6);
+	my $meas = $comp->get_measurement($opts{mhz} * 1e6);
 
 	#$meas = $meas->serial($meas->serial_to_shunt);
 	#$meas = $meas->serial($meas, $meas);
@@ -122,7 +120,10 @@ if (defined($opts{mhz}))
 
 if ($opts{output})
 {
-	$s2p->save($opts{output}, $opts{output_format}, $opts{output_param});
+	RF::Touchstone::save(component => $comp,
+		filename => $opts{output},
+		format => $opts{output_format},
+		type => $opts{output_param});
 }
 
 exit 0;

@@ -3,6 +3,8 @@ package RF::Component::Measurement;
 use strict;
 use warnings;
 
+use parent 'RF::Component';
+
 use Math::Complex;
 use Math::Trig;
 use RF::Component::Measurement::SParam;
@@ -13,7 +15,7 @@ use RF::Component::Measurement::AParam;
 
 use Data::Dumper;
 
-our %valid_opts = map { $_ => 1 } qw/z0 params hz/;
+our %valid_opts = map { $_ => 1 } qw/component params hz/;
 
 sub new
 {
@@ -46,13 +48,21 @@ sub clone
 	# Use existing params if not defined in %args:
 	$args{params} = $self->params->clone if (!defined($args{params}));
 
+	die "args{params} is undef: RF parameters (eg, S-parameters) must be provided." if (!defined($args{params}));
+
 	return $newclass->new(%h, %args);
 }
 
 ###############################################################################
 #                                                       Member access functions
 
-sub z0 { return shift->{z0}; }
+# Takes a port# (not an array index), so $self->z0(1) is the impedance at port1.
+sub z0
+{
+	my ($self, $port) = @_;
+	$self->{component}->z0($port);
+}
+
 sub hz { return shift->{hz}; }
 
 

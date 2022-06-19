@@ -5,75 +5,29 @@ use warnings;
 
 use Math::Complex;
 use Math::Matrix::Complex;
-use Data::Dumper;
 
+use RF::Component;
 use RF::Component::Measurement;
 use RF::Component::Measurement::SParam;
 use RF::Component::Measurement::YParam;
-
-sub new
-{
-	my ($class, %args) = @_;
-
-	my $self = bless(\%args, $class);
-
-	return $self;
-}
-
-sub get_param
-{
-	my ($self, $hz) = @_;
-
-	my $prev;
-	my $cur;
-	for my $s (@{ $self->{params} })
-	{
-		$cur = $s;
-		#print "hz=$hz cur=" . $cur->hz . "\n";
-		if ($cur->hz >= $hz)
-		{
-			last;
-		}
-
-		$prev = $cur;
-	}
-
-	# Exact match, return this one:
-	return $cur if ($cur->hz == $hz);
-		
-	die "unable to find Hz for evaluation at $hz" if (!defined $prev);
-
-	my $prev_hz = $prev->hz;
-	my $cur_hz = $cur->hz;
-
-	#print "prev: $prev_hz=" . $prev->tostring('ma') . "\n";
-	#print "cur : $cur_hz=" . $cur->tostring('ma') . "\n";
-	
-	my $hz_diff = $cur_hz - $prev_hz;
-	my $hz_off = $hz - $prev_hz;
-
-	# Return the complex matrix scaled $p percent of the way between $prev and $cur:
-	# https://math.stackexchange.com/q/4451400/983059
-	my $p = ($hz - $prev_hz)/$hz_diff;
-	my $ret = (1-$p)*$prev->params + $p*$cur->params;
-
-	# If interpolated, instatiate a new class instance
-	# and make sure it is the same class type because
-	# 'params' could be S-, Y-, Z-params, etc.
-	return $cur->clone(ref($cur), hz => $hz, params => $ret);
-}
+use RF::Component::Measurement::ZParam;
+use RF::Component::Measurement::TParam;
 
 sub load
 {
-	my ($self, $fn) = @_;
+	my ($fn) = @_;
 
 	my $class;
-	my ($funit, $param, $fmt, $R, $z0);
+	my ($funit, $param_type, $fmt, $R, $z0);
+	my $n_ports;
 
 	open(my $in, $fn) or die "$fn: $!";
 
 	my $n = 0;
 	my $line;
+
+	my @measurements;
+	my $component = RF::Component->new(measurements => \@measurements);
 	while (defined($line = <$in>))
 	{
 		chomp($line);
@@ -81,7 +35,7 @@ sub load
 
 		if ($line =~ /^!/)
 		{
-			push @{ $self->{comments} }, $line;
+			push @{ $component->{comments} }, $line;
 			next;
 		}
 
@@ -91,33 +45,35 @@ sub load
 
 		if ($line =~ s/^#\s*//)
 		{
-			($funit, $param, $fmt, $R, $z0) = split /\s+/, $line;
+			($funit, $param_type, $fmt, $R, $z0) = split /\s+/, $line;
 
-			die "z0 != 50 ohms: $z0" if $z0 != 50;
-			die "R != R: $R" if $R ne 'R';
+			$param_type = uc($param_type);
+			die "$fn:$n: expected 'R' before z0, but found: $R" if $R ne 'R';
 			next;
 		}
 
-		$self->{z0} = $z0;
-		$self->{param_type} = $param;
+		$param_type = $param_type;
 
-		if ($self->{param_type} eq 'S') {
+		if ($param_type eq 'S') {
 			$class = 'RF::Component::Measurement::SParam';
 		}
-		elsif ($self->{param_type} eq 'Y') {
+		elsif ($param_type eq 'Y') {
 			$class = 'RF::Component::Measurement::YParam';
 		}
-		elsif ($self->{param_type} eq 'Z') {
+		elsif ($param_type eq 'Z') {
 			$class = 'RF::Component::Measurement::ZParam';
 		}
-		elsif ($self->{param_type} eq 'T') {
+		elsif ($param_type eq 'T') {
 			# T is not a standard s2p matrix type, but we can load it:
 			$class = 'RF::Component::Measurement::TParam';
 		}
+		elsif ($param_type eq 'A') {
+			# A is not a standard s2p matrix type, but we can load it:
+			$class = 'RF::Component::Measurement::AParam';
+		}
 		else
 		{
-			warn "$self->{param_type}-parameter type is not implemented, using base class.";
-			$class = 'RF::Component::Measurement';
+			die "$fn:$n: $param_type-parameter type is not implemented.";
 		}
 
 		$line =~ s/^\s+|\s+$//g;
@@ -132,9 +88,21 @@ sub load
 
 		$hz = scale_to_hz($funit, $hz);
 
-		my $n_ports = sqrt(scalar @params_cx);
+		my $sqrt_n_params = sqrt(scalar @params_cx);
 
-		#my $m = Math::Matrix->new(map {[]} (1..$n_ports));
+		if (!defined($n_ports))
+		{
+			$n_ports = $sqrt_n_params;
+
+			# Maybe these should be functions to set semi-private static fields?
+			$component->{n_ports} = $n_ports;
+			$component->{z} = [ map { $z0 } (1..$n_ports) ];
+		}
+
+		if ($sqrt_n_params != $n_ports)
+		{
+			die "$fn:$n: expected $n_ports fields of port data but found $sqrt_n_params: $n_ports != $sqrt_n_params";
+		}
 
 		my $m = [];
 		for (my $i = 0; $i < $n_ports; $i++)
@@ -147,34 +115,41 @@ sub load
 
 		$m = Math::Matrix::Complex->new($m);
 
-		push @{ $self->{params} },
-			$class->new(z0 => $z0, hz => $hz, params => $m);
+		push @measurements, $class->new(component => $component, hz => $hz, params => $m);
 	}
+
+	return $component;
 }
 
 sub save
 {
-	my ($self, $fn, $fmt, $type) = @_;
+	my (%opts) = @_;
+
+	my ($component, $fn, $fmt, $type) = @opts{qw/component filename format type/};
+
+	die "component must be defined" if !defined $component;
+	die "filename must be defined" if !defined $fn;
+
+	$fmt //= 'ri';
+	$type //= 'S';
+
+	my %fmts = map { $_ => 1 } qw/db ma ri/;
+
+	$fmt = lc($fmt);
+	die "Unknown format: $fmt" if (!defined($fmts{$fmt}));
+	$fmt = uc($fmt);
+
+	$type = uc($type); # S, Y, Z, T, A (H and G not yet implemented)
+
+	my $z0 = $component->z0;
 
 	open(my $out, '>', $fn) or die "$fn: $!";
 
-	my %fmts =
-	(
-		db => 1,
-		ma => 1,
-		ri => 1,
-	);
+	print $out "# MHz $type $fmt R $z0\n";
+	print $out join("\n", $component->comments) . "\n";
 
-	$fmt = lc($fmt);
-	die "unknown format: $fmt" if (!defined($fmts{$fmt}));
-	$fmt = uc($fmt);
 
-	$type //= 'S';
-	$type = uc($type); # S, Y, Z, H, G
-
-	print $out join("\n", @{ $self->{comments} // [] }) . "\n";
-	print $out "# MHz $type $fmt R $self->{z0}\n";
-	foreach my $meas (@{ $self->{params} })
+	foreach my $meas ($component->measurements)
 	{
 		$meas = $meas->to_X_param($type);
 		print $out "" . ($meas->{hz}/1e6) . " " . $meas->tostring($fmt) . "\n";
