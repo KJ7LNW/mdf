@@ -13,7 +13,7 @@ use RF::Component::Measurement::YParam;
 use RF::Component::Measurement::ZParam;
 use RF::Component::Measurement::TParam;
 
-sub load
+sub snp_load
 {
 	my ($fn) = @_;
 
@@ -121,7 +121,7 @@ sub load
 	return $component;
 }
 
-sub save
+sub snp_save
 {
 	my (%opts) = @_;
 

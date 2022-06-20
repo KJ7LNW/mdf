@@ -61,7 +61,7 @@ $opts{output_format} //= 'db';
 $opts{output_format} = lc($opts{output_format});
 
 
-my $comp = RF::Touchstone::load($ARGV[0]);
+my $comp = RF::Touchstone::snp_load($ARGV[0]);
 
 if (defined($opts{mhz}))
 {
@@ -120,7 +120,7 @@ if (defined($opts{mhz}))
 
 if ($opts{output})
 {
-	RF::Touchstone::save(component => $comp,
+	RF::Touchstone::snp_save(component => $comp,
 		filename => $opts{output},
 		format => $opts{output_format},
 		type => $opts{output_param});
