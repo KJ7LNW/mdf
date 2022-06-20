@@ -8,7 +8,7 @@ use lib 'lib';
 use Data::Dumper;
 use Getopt::Long qw(:config bundling);
 
-use RF::Touchstone;
+use RF::IO::Touchstone;
 use RF::Component::Measurement::AParam;
 
 use Math::Complex;
