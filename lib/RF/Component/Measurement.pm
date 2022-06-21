@@ -63,6 +63,12 @@ sub z0
 	$self->{component}->z0($port);
 }
 
+sub n_ports
+{
+	my ($self, $port) = @_;
+	$self->{component}->n_ports;
+}
+
 sub hz { return shift->{hz}; }
 
 
@@ -185,9 +191,10 @@ sub tostring
 
 	my $pretty_param = $1 if ref($self) =~ /::([A-Z]+)Param/;
 	my $ret = '';
-	for (my $i = 1; $i <= 2; $i++)
+	my $n_ports = $self->n_ports;
+	for (my $i = 1; $i <= $n_ports; $i++)
 	{
-		for (my $j = 1; $j <= 2; $j++)
+		for (my $j = 1; $j <= $n_ports; $j++)
 		{
 			my $d = shift @data;
 			if (defined $pretty)
