@@ -1,7 +1,9 @@
-package RF::Touchstone;
+package RF::IO::Touchstone;
 
 use strict;
 use warnings;
+use 5.010;
+use Carp;
 
 use Math::Complex;
 use Math::Matrix::Complex;
@@ -15,23 +17,27 @@ use RF::Component::Measurement::TParam;
 
 sub snp_load
 {
-	my ($fn) = @_;
+	my ($fn, %args) = @_;
 
 	my $class;
 	my ($funit, $param_type, $fmt, $R, $z0);
 	my $n_ports;
 
-	open(my $in, $fn) or die "$fn: $!";
+	open(my $in, $fn) or croak "$fn: $!";
 
 	my $n = 0;
 	my $line;
 
 	my @measurements;
-	my $component = RF::Component->new(measurements => \@measurements);
+	my $component = RF::Component->new(%args, measurements => \@measurements, filename => $fn);
 	while (defined($line = <$in>))
 	{
 		chomp($line);
 		$n++;
+
+		$line =~ s/^\s+|\s+$//g;
+
+		next if !length($line);
 
 		if ($line =~ /^!/)
 		{
@@ -39,20 +45,20 @@ sub snp_load
 			next;
 		}
 
-		#print "$line\n";
-
-		warn "unknown line $n: $line\n" if ($line !~ /\s*\d+/);
-
 		if ($line =~ s/^#\s*//)
 		{
 			($funit, $param_type, $fmt, $R, $z0) = split /\s+/, $line;
 
 			$param_type = uc($param_type);
-			die "$fn:$n: expected 'R' before z0, but found: $R" if $R ne 'R';
+			croak "$fn:$n: expected 'R' before z0, but found: $R" if $R ne 'R';
 			next;
 		}
 
-		$param_type = $param_type;
+		if ($line !~ /^\d/)
+		{
+			carp "$fn:$n: unexpected line $n: $line\n";
+			next;
+		}
 
 		if ($param_type eq 'S') {
 			$class = 'RF::Component::Measurement::SParam';
@@ -73,10 +79,9 @@ sub snp_load
 		}
 		else
 		{
-			die "$fn:$n: $param_type-parameter type is not implemented.";
+			croak "$fn:$n: $param_type-parameter type is not implemented.";
 		}
 
-		$line =~ s/^\s+|\s+$//g;
 		my @params = split(/\s+/, $line);
 		my $hz = shift(@params);
 		my @params_cx;
@@ -101,7 +106,7 @@ sub snp_load
 
 		if ($sqrt_n_params != $n_ports)
 		{
-			die "$fn:$n: expected $n_ports fields of port data but found $sqrt_n_params: $n_ports != $sqrt_n_params";
+			croak "$fn:$n: expected $n_ports fields of port data but found $sqrt_n_params: $n_ports != $sqrt_n_params";
 		}
 
 		my $m = [];
@@ -121,14 +126,13 @@ sub snp_load
 	return $component;
 }
 
-sub snp_save
+sub snp_save_fd
 {
 	my (%opts) = @_;
 
-	my ($component, $fn, $fmt, $type) = @opts{qw/component filename format type/};
+	my ($component, $fmt, $type, $fd) = @opts{qw/component format type fd/};
 
-	die "component must be defined" if !defined $component;
-	die "filename must be defined" if !defined $fn;
+	croak "component must be defined" if !defined $component;
 
 	$fmt //= 'ri';
 	$type //= 'S';
@@ -136,14 +140,14 @@ sub snp_save
 	my %fmts = map { $_ => 1 } qw/db ma ri/;
 
 	$fmt = lc($fmt);
-	die "Unknown format: $fmt" if (!defined($fmts{$fmt}));
+	croak "Unknown format: $fmt" if (!defined($fmts{$fmt}));
 	$fmt = uc($fmt);
 
 	$type = uc($type); # S, Y, Z, T, A (H and G not yet implemented)
 
 	my $z0 = $component->z0;
 
-	open(my $out, '>', $fn) or die "$fn: $!";
+	my $out = $opts{fd} or croak "file descriptor must be defined";
 
 	print $out "# MHz $type $fmt R $z0\n";
 	print $out join("\n", $component->comments) . "\n";
@@ -154,7 +158,21 @@ sub snp_save
 		$meas = $meas->to_X_param($type);
 		print $out "" . ($meas->{hz}/1e6) . " " . $meas->tostring($fmt) . "\n";
 	}
+}
+
+sub snp_save
+{
+	my ($fn, %opts) = @_;
+
+	croak "filename must be defined" if !defined $fn;
+
+	open(my $out, '>', $fn) or croak "$fn: $!";
+
+	my $ret = snp_save_fd(%opts, fd => $out);
+
 	close($out);
+
+	return $ret;
 }
 
 sub scale_to_hz
@@ -172,7 +190,7 @@ sub scale_to_hz
 
 	my $fscale = $scale{lc($funit)};
 
-	die "Unknown frequency scale: $fscale" if !$fscale;
+	croak "Unknown frequency scale: $fscale" if !$fscale;
 
 	return $n*$fscale;
 }
@@ -197,7 +215,7 @@ sub params_to_complex
 	);
 
 	my $f = $conv{uc($fmt)};
-	die "Unknown s-parameter format: $fmt" if !$f;
+	croak "Unknown s-parameter format: $fmt" if !$f;
 
 	return $f->();
 }
