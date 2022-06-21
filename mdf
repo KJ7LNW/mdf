@@ -27,12 +27,16 @@
 
 use strict;
 use warnings;
+use Carp;
 use lib 'lib';
 
 use Term::ANSIColor;
 use Getopt::Long qw(:config bundling);
 use JSON;
 use Data::Dumper;
+
+use RF::IO::Touchstone;
+use RF::IO::MDF;
 
 use API::Octopart;
 
@@ -48,7 +52,7 @@ GetOptions(
 	"var-literal|L=s"	=> \$opts{var_literal},
 	"unique|u"		=> sub { $opts{unique} = 1 },
 	"not-unique|U"		=> sub { $opts{unique} = 0 },
-	"reverse_sort|r=s"	=> \$opts{reverse_sort}, 
+	"reverse_sort|r"	=> \$opts{reverse_sort}, 
 	"limit|l=s"		=> \$opts{limit},
 	"verbose|v"		=> sub {$opts{verbose}++},
 	"quiet|q"		=> \$opts{quiet},
@@ -61,9 +65,9 @@ GetOptions(
 ) or usage();
 
 usage() if ( !@ARGV );
-usage() if ( !$opts{output} );
-usage() if ( !$opts{var_code} && !$opts{var_literal});
-usage() if ( $opts{var_code} && $opts{var_literal});
+usage("output must be specified") if ( !$opts{output} );
+usage("must specify either --var-code or --var-literal") if ( !$opts{var_code} && !$opts{var_literal});
+usage("cannot specify both --var-code and --var-literal") if ( $opts{var_code} && $opts{var_literal});
 
 my $octo;
 my %octo_filter;
@@ -89,93 +93,35 @@ $opts{sort} //= $opts{var_code};
 $opts{sort} //= $opts{var_literal};
 $opts{sort} =~ s/[=,].*$//;
 
-my %files;
-my %seen;
-my $count = 0;
+
+my @all_components;
+
 foreach my $file (@ARGV)
 {
+	my ( $value_unit, %v);
+
+	@v{'value_unit', 'value_code_regex'} = split(/[=]/, $opts{var_code}) if ($opts{var_code});
+	@v{'value_unit', 'value_literal_regex'} = split(/[=]/, $opts{var_literal}) if ($opts{var_literal});
+
+	push @all_components, RF::IO::Touchstone::snp_load($file, %v);
+}
+
+my %seen;
+my $count = 0;
+my @available_components;
+foreach my $c (@all_components)
+{
 	my %vars;
-	my ($var, $val, $regex);
 
 	last if (defined($opts{limit}) && ++$count > $opts{limit});
 
-	if ($opts{var_code})
-	{
-		( $var, $regex ) = split(/[=,]/, $opts{var_code});
+	my $stock = get_stock($c);
+	my $model = $c->model;
+	my $val = $c->value;
+	my $var = $c->value_unit;
 
-		if ($file =~ /$regex/i && $1)
-		{
-			$val = $1;
-		}
-		else
-		{
-			Warn($file, "Did not match regex, skipping: $regex");
-			next;
-		}
-
-		if ( $val =~ s/[A-Z]/./i )
-		{
-			# These are strings, so put leading/trailing zeros at the decimal:
-			$val =~ s/^\./0./;
-			$val =~ s/\.$/.0/;
-
-			$vars{$var} = $val;
-		}
-		elsif ( $val =~ s/^(\d+)(\d)$/$1/ )
-		{
-			$vars{$var} = $1 * (10 ** $2);
-		}
-		else
-		{
-			Warn($file, "Unknown value code '$val'");
-			next;
-		}
-	}
-	elsif ($opts{var_literal})
-	{
-		( $var, $regex ) = split(/[=,]/, $opts{var_literal});
-
-		if ( $file =~ /$regex/i && $1 )
-		{
-			$vars{$var} = $1;
-		}
-	}
-	else
-	{
-		die "Either --var-literal or --var-code must be set.";
-	}
-
-	if (!defined($val))
-	{
-		Warn($file, "Could not find an value for var: '$var'.");
-		next;
-	}
-
-	if ( !defined($vars{$opts{sort}}) )
-	{
-		Warn($file, "No sort column found for $opts{sort}; val=$val");
-		next;
-	}
-
-	
-	my $model = get_model($file);
-
-	my $stock;
-	if ($opts{octopart})
-	{
-		$stock = $octo->has_stock($model, %octo_filter);
-		if ($opts{verbose} >= 4)
-		{
-			print STDERR colored(['white bold'], "$file:\n\t") .
-				colored(['blue'],
-					Dumper($octo->get_part_stock_detail($model, %octo_filter)) . "\n");
-		}
-	}
-	else
-	{
-		# Perl will evaluate this nonzero-length string as "true", below.
-		$stock = 'unknown';
-	}
+	# Perl will evaluate this nonzero-length string as "true", below.
+	$stock //= 'unknown';
 
 	if ($stock)
 	{
@@ -184,22 +130,17 @@ foreach my $file (@ARGV)
 
 		$seen{$val}++;
 
-		if ($val !~ /^\d+\.?\d*|\d*\.?\d+$/)
-		{
-			Warn($file, "Value for $var is not numeric: $val");
-		}
-
 		if ($opts{verbose} >= 2)
 		{
 			print STDERR colored(['green bold'], "$model ($var=$val): $stock in stock\n")
 		}
-		$files{$file} = \%vars;
+
+		push @available_components, $c;
 	}
 	elsif ($opts{verbose} >= 3)
 	{
 		print STDERR colored(['red bold'], "$model ($var=$val): $stock in stock\n");
 	}
-
 }
 
 my $out;
@@ -215,60 +156,18 @@ else
 my $idx = 0;
 my %seller_counts;
 my %part_models;
-my @sorted_files = sort { $files{$a}->{$opts{sort}} <=> $files{$b}->{$opts{sort}} } keys %files ;
-@sorted_files = reverse @sorted_files if ($opts{reverse_sort});
-foreach my $file (@sorted_files)
-{
-	my $c = read_file($file);
-	
-	$c =~ s/!.*?\r?\n//g;
-	my $pound;
-	if ($c =~ s/(#.*?\r?\n)//)
-	{
-		$pound = $1;
-	}
-	print $out "! $file\n";
 
-	my $model = get_model($file);
+my @sorted_components = sort { $a->value <=> $b->value } @available_components;
+@sorted_components = reverse @sorted_components if ($opts{reverse_sort});
 
-	$part_models{$model}++;
-	my $stock = $octo->get_part_stock($model, %octo_filter) if ($opts{octopart});
-	$seller_counts{$_}++ foreach (keys %$stock);
-
-	foreach my $var ( keys(%{ $files{$file} }) )
-	{
-		if ($opts{octopart_show_stock} >= 2)
-		{
-			print STDERR colored(['bold blue'],
-				"$var=\"$idx. $files{$file}{$var} $model: " .
-				Dumper($stock) .
-				"\n");
-
-		}
-		elsif ($opts{verbose} >= 1)
-		{
-			print STDERR colored(['blue'],
-				"Adding $var=\"$idx. $files{$file}{$var} $model\" to the mdf.\n");
-		}
-		print $out "VAR $var=\"$idx. $files{$file}{$var} $model\"\n";
-		#print $out "VAR $var=\"x$files{$file}{$var}x\"\n";
-		
-		$idx++;
-	}
-
-	print $out "BEGIN ACDATA\n";
-	#print $out "%F  n11x   n11y  n21x  n21y  n12x  n12y n22x  n22y\n";
-	print $out "$pound";
-	print $out "% F S[1,1](Complex) S[2,1](Complex) S[1,2](Complex) S[2,2](Complex)\n";
-	print $out "$c";
-	print $out "\n" if ($c !~ /\n$/s);
-
-	print $out "END\n\n";
-}
+# Save in magnitude-angle format, but only so `diff` shows me how well the output works.
+# You can use any format you like: db, ma, ri.
+RF::IO::MDF::mdf_save($opts{output}, components => \@sorted_components, format => 'MA');
 
 if ($opts{verbose} >= 1)
 {
-	print STDERR colored(['blue bold'], "Added $idx parts to $opts{output}\n");
+	my $count = @sorted_components;
+	print STDERR colored(['blue bold'], "Added $count parts to $opts{output}\n");
 }
 
 if ($opts{octopart_show_stock} >= 1)
@@ -304,6 +203,9 @@ exit 0;
 
 sub usage
 {
+	my $err = shift;
+	croak colored [ qw/red bold/], "$err" if $err;
+
 	print "usage: $0 [options] --var-code 'var_name=MODEL-(...)\.s2p' file1.s2p [file2...] -o mymdf.mdf
 
 --output|-o      <file>        Output filename, required.
@@ -428,26 +330,14 @@ Note that regular expressions matching filenames are always case-insensitive:
 	exit 1;
 }
 
-sub read_file
-{
-	my $fn = shift;
-	local $/ = undef;
-	open(my $in, $fn) or die "$!: $fn";
-
-	my $content = <$in>;
-	close($in);
-	return $content;
-}
-
 sub get_model
 {
-	my $f = shift;
-	$f =~ s/.*\///;
-	$f =~ s/.s2p//i;
+	my $component = shift;
 
-	$f .= $opts{model_suffix} // '';
+	my $m = $component->model;
+	$m .= $opts{model_suffix} // '';
 
-	return $f;
+	return $m;
 }
 
 sub Warn
@@ -460,4 +350,24 @@ sub Warn
 	$file =~ s!^.*/!! if ($opts{verbose} < 3);
 
 	print STDERR colored(['yellow bold'], "$file: " . join("\n", @msg)) . "\n";
+}
+
+sub get_stock
+{
+	my $c = shift;
+	my $model = get_model($c);
+
+	my $stock;
+	if ($opts{octopart})
+	{
+		$stock = $octo->has_stock($model, %octo_filter);
+		if ($opts{verbose} >= 4)
+		{
+			print STDERR colored(['white bold'], "$model:\n\t") .
+				colored(['blue'],
+					Dumper($octo->get_part_stock_detail($model, %octo_filter)) . "\n");
+		}
+	}
+
+	return $stock;
 }
