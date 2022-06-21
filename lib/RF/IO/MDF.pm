@@ -32,6 +32,15 @@ sub mdf_save
 
 		print $out "BEGIN ACDATA\n";
 
+		# In the AWR and Keysight example formats the %F line comes _after_
+		# the "# HZ" line from the original s2p.  Fixing this requires hooking
+		# the touchstone code somewhere or re-processing the MDF so since it works
+		# in AWR we'll leave it for now.  If you have trouble with the MDF output
+		# then swap the #HZ and %F lines.  If it works after the swap then we 
+		# really need to fix this.
+		# References:
+		#    https://awrcorp.com/download/faq/english/docs/users_guide/data_file_formats.html#d0e5542
+		#    https://edadocs.software.keysight.com/display/ads2009/Working+with+Data+Files#WorkingwithDataFiles-1135104
 		my $pct_line = "% F";
 		for (my $i = 1; $i <= $n_ports; $i++)
 		{
