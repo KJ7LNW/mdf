@@ -131,15 +131,21 @@ sub get_measurement
 	# Exact match, return this one:
 	return $cur if ($cur->hz == $hz);
 
+	# If a higher frequency than the last frequency was requested then
+	# we cannot handle the request, return undef:
+	return undef if ($prev == $cur);
+
 	croak "unable to find Hz for evaluation at $hz" if (!defined $prev);
 
 	my $prev_hz = $prev->hz;
 	my $cur_hz = $cur->hz;
 
+
 	#print "prev: $prev_hz=" . $prev->tostring('ma') . "\n";
 	#print "cur : $cur_hz=" . $cur->tostring('ma') . "\n";
 
 	my $hz_diff = $cur_hz - $prev_hz;
+
 	my $hz_off = $hz - $prev_hz;
 
 	# Return the complex matrix scaled $p percent of the way between $prev and $cur:
@@ -150,7 +156,30 @@ sub get_measurement
 	# If interpolated, instatiate a new class instance
 	# and make sure it is the same class type because
 	# 'params' could be S-, Y-, Z-params, etc.
-	return $cur->clone(ref($cur), params => $ret);
+	return $cur->clone(ref($cur), params => $ret, hz => $hz);
+}
+
+sub parallel
+{
+	my ($self, $c) = @_;
+
+	my $cnew = RF::Component->new(%$self, model => $self->model . "," . $c->model, value => undef );
+
+	my @new_measurements;
+	foreach my $m1 ($self->measurements)
+	{
+		my $m2 = $c->get_measurement($m1->hz);
+
+		next if !defined $m2;
+
+		my $p = $m1->parallel($m2);
+		$p->{component} = $cnew;
+		push @new_measurements, $p;
+	}
+
+	$cnew->{measurements} = \@new_measurements;
+
+	return $cnew;
 }
 
 sub _parse_model_value_code
