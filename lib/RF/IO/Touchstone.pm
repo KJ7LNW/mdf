@@ -162,7 +162,9 @@ sub snp_save_fd
 
 sub snp_save
 {
-	my ($fn, %opts) = @_;
+	my (%opts) = @_;
+
+	my $fn = $opts{filename};
 
 	croak "filename must be defined" if !defined $fn;
 
