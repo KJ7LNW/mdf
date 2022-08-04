@@ -45,10 +45,16 @@ sub new
 		$self->{model} //= $model;
 	}
 
+	if (defined($self->{value_unit}) && $self->{value_unit} !~ /^[fpnumkmGTPE]?[FHR]$/)
+	{
+		croak "invalid unit: expected sU where 's' is an si prefix (fpnumkmGTPE) and U is (F)arad, (H)enry, or (R) for ohms";
+	}
 
 	if (defined($self->{model}) && $self->{value_code_regex} && !$self->{value_literal_regex})
 	{
-		$self->{value} = _parse_model_value_code($self->{model}, $self->{value_code_regex});
+		$self->{value} = _parse_model_value_code($self->{model},
+			$self->{value_code_regex},
+			$self->{value_unit});
 	}
 	elsif (defined($self->{model}) && $self->{value_literal_regex} && !$self->{value_code_regex})
 	{
@@ -68,11 +74,6 @@ sub new
 	if (defined($self->{value}) && $self->{value} !~ /^\d+\.?\d*|\d*\.?\d+$/)
 	{
 		croak("component value is not numeric: $self->{value}");
-	}
-
-	if (defined($self->{value_unit}) && $self->{value_unit} !~ /^[fpnumkmGTPE]?[FHR]$/)
-	{
-		croak "invalid unit: expected sU where 's' is an si prefix (fpnumkmGTPE) and U is (F)arad, (H)enry, or (R) for ohms";
 	}
 
 	if ((defined($self->{value}) && !defined($self->{value_unit})) || 
@@ -184,7 +185,44 @@ sub parallel
 
 sub _parse_model_value_code
 {
-	my ($model, $regex) = @_;
+	my ($model, $regex, $unit) = @_;
+
+	# The return of this function will scale the value to these well-known
+	# unit types: pF|nF|uF|uH|nH|R|Ohm|Ohms
+	# See industry naming conventions:
+	#
+	# - https://www.ttelectronics.com/TTElectronics/media/ProductFiles/ApplicationNotes/TN003-Methods-for-Coding-Resistor-Values-in-Part-Numbers.pdf
+	# - https://electronics.stackexchange.com/questions/624513/inductor-and-capacitor-3-digit-exponent-value-codes-is-there-a-standard
+
+	my %scale;
+	if (lc($unit) eq 'pf') {
+		$scale{R} = 1;
+		$scale{N} = 1e3;
+	}
+	elsif (lc($unit) eq 'nf') {
+		$scale{R} = 1e-3;
+		$scale{N} = 1;
+	}
+	elsif (lc($unit) eq 'uf') {
+		$scale{R} = 1e-6;
+		$scale{N} = 1e-3;
+	}
+	elsif (lc($unit) eq 'uh') {
+		$scale{R} = 1;
+		$scale{N} = 1e-3;
+	}
+	elsif (lc($unit) eq 'nh') {
+		$scale{R} = 1e3;
+		$scale{N} = 1;
+	}
+	elsif (lc($unit) eq 'r' || lc($unit) =~ /ohms?/) {
+		$scale{R} = 1;
+		$scale{L} = 1e-3;
+	}
+	else
+	{
+		croak("unknown base unit for component (pF|nF|uF|uH|nH|R|Ohm|Ohms): $unit");
+	}
 
 	my $val;
 	if ($model =~ /$regex/i && $1)
@@ -198,14 +236,17 @@ sub _parse_model_value_code
 	}
 
 	# Decimal point: 1R3 = 1.3 Ohms, 1N3 = 1.3 nH, etc.
-	if ( $val =~ s/[A-Z]/./i )
+	if ( $val =~ s/([A-Z])/./i )
 	{
+		my $scale = $1;
+		croak "Undefined scaling type $scale for value: $val" if (!defined($scale{$scale}));
+
 		# These are strings, so put leading/trailing zeros at the decimal:
 		$val =~ s/^\./0./;
 		$val =~ s/\.$/.0/;
 
 		# Could be a string, so make it a float:
-		$val *= 1.0;
+		$val *= $scale{$scale};
 	}
 	elsif ( $val =~ s/^(\d+)(\d)$/$1/ )
 	{
