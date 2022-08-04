@@ -96,24 +96,33 @@ $opts{sort} =~ s/[=,].*$//;
 
 my @all_components;
 
+my $count = 0;
 foreach my $file (@ARGV)
 {
 	my ( $value_unit, %v);
 
+	last if (defined($opts{limit}) && ++$count > $opts{limit});
+
 	@v{'value_unit', 'value_code_regex'} = split(/[=]/, $opts{var_code}) if ($opts{var_code});
 	@v{'value_unit', 'value_literal_regex'} = split(/[=]/, $opts{var_literal}) if ($opts{var_literal});
 
-	push @all_components, RF::IO::Touchstone::snp_load($file, %v);
+	my $comp = eval { RF::IO::Touchstone::snp_load($file, %v) };
+
+	print STDERR colored(['red bold'], $@) if $@;
+
+	next if !$comp;
+
+	push @all_components, $comp;
 }
 
+# Keep these sorted in @ARGV order because we want to select
+# files based on tolerance order.
+# For example: GQM1555C2D???{W,B,C,D,F,G,J,K,M}*.s2p
 my %seen;
-my $count = 0;
 my @available_components;
 foreach my $c (@all_components)
 {
 	my %vars;
-
-	last if (defined($opts{limit}) && ++$count > $opts{limit});
 
 	my $stock = get_stock($c);
 	my $model = $c->model;
