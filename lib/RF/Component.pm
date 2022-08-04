@@ -250,7 +250,9 @@ sub _parse_model_value_code
 	}
 	elsif ( $val =~ s/^(\d+)(\d)$/$1/ )
 	{
-		$val = $1 * (10 ** $2);
+		# "R" is always the base-unit scaler, so we have to multiply it in case
+		# there is no alpha "decimal" point:
+		$val = $1 * (10 ** $2) * $scale{R};
 	}
 	else
 	{
