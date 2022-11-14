@@ -136,3 +136,8 @@ Note that regular expressions matching filenames are always case-insensitive:
 
 --quiet|-q                  Suppress warnings, but does not suppress verbosity.
 
+
+ACKNOWLEDGEMENTS
+================
+
+Thanks to Hannah Mortimer for help writing the early first-draft of this program.
