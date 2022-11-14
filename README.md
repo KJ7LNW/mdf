@@ -1,14 +1,23 @@
 SYNOPSIS
 ========
 
-Merge .s2p files into a .mdf file for optimization in Microwave Office!
+Merge .s2p files into a single .mdf file for optimization in Microwave Office!
 
 You can use the Octopart API to build an MDF with parts that are actually in stock!
+
+GETTING STARTED
+===============
+
+	cpanm RF::Component API::Octopart
+	git clone https://github.com/KJ7LNW/mdf.git
+	cd mdf
+	./mdf --help
+
 
 USAGE
 =====
 
-usage: ./mdf [options] --var-code 'var_name=MODEL-(...).s2p' file1.s2p [file2...] -o mymdf.mdf
+usage: ./mdf [options] --var-code 'var\_name=MODEL-(...).s2p' file1.s2p [file2...] -o mymdf.mdf
 
 --output|-o      <file>        Output filename, required.
 	If the filename is '-' then output will be written to stdout

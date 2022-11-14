@@ -31,7 +31,6 @@ use Carp;
 
 use Term::ANSIColor;
 use Getopt::Long qw(:config bundling);
-use JSON;
 use Data::Dumper;
 
 use RF::Component;
