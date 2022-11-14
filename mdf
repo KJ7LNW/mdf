@@ -28,15 +28,14 @@
 use strict;
 use warnings;
 use Carp;
-use lib 'lib';
 
 use Term::ANSIColor;
 use Getopt::Long qw(:config bundling);
 use JSON;
 use Data::Dumper;
 
-use RF::IO::Touchstone;
-use RF::IO::MDF;
+use RF::Component;
+use RF::Component::Multi;
 
 use API::Octopart;
 
@@ -105,8 +104,10 @@ foreach my $file (@ARGV)
 
 	@v{'value_unit', 'value_code_regex'} = split(/[=]/, $opts{var_code}) if ($opts{var_code});
 	@v{'value_unit', 'value_literal_regex'} = split(/[=]/, $opts{var_literal}) if ($opts{var_literal});
+	$v{filename} = $file;
 
-	my $comp = eval { RF::IO::Touchstone::snp_load($file, %v) };
+	my $comp = eval { RF::Component->load($file, %v) };
+	warn $@ if !$comp;
 
 	print STDERR colored(['red bold'], $@) if $@;
 
@@ -171,7 +172,17 @@ my @sorted_components = sort { $a->value <=> $b->value } @available_components;
 
 # Save in magnitude-angle format, but only so `diff` shows me how well the output works.
 # You can use any format you like: db, ma, ri.
-RF::IO::MDF::mdf_save($opts{output}, components => \@sorted_components, format => 'MA');
+my $mdf = RF::Component::Multi->new(@sorted_components);
+$mdf->save($opts{output}, save_options => {format => 'MA'}, vars =>
+	{
+		component => sub {
+			our $i //= 0;
+			my $c = shift;
+			my $t = "$i. $c->{value} $c->{value_unit} $c->{model}";
+			$i++;
+			return $t;
+		}
+	});
 
 if ($opts{verbose} >= 1)
 {
@@ -231,7 +242,7 @@ Note that regular expressions matching filenames are always case-insensitive:
 	code of 1N4 or 14N would be 1.4 or 14.0, respectively. The unit 'pF' in
 	the example is excluded from the code.
 
-	The above (...) must match the code or literal to be placed in the MDF
+	The (...) below must match the code or literal to be placed in the MDF
 	variable. Example:
 		--var-code 'C_pF=MODEL-(...)\.s2p'
 	
