@@ -48,8 +48,12 @@ $opts{octopart_show_stock} = 0;
 GetOptions(
 	"var-code|V=s"		=> \$opts{var_code},
 	"var-literal|L=s"	=> \$opts{var_literal},
+	"var-name|n=s"		=> \$opts{var_name},
 	"unique|u"		=> sub { $opts{unique} = 1 },
 	"not-unique|U"		=> sub { $opts{unique} = 0 },
+	"sort|s=s"		=> \$opts{sort},
+	"mdif-var-format|c=s"	=> \$opts{var_format},
+	"freqs|f=s"		=> \$opts{freqs},
 	"reverse_sort|r"	=> \$opts{reverse_sort}, 
 	"limit|l=s"		=> \$opts{limit},
 	"verbose|v"		=> sub {$opts{verbose}++},
@@ -64,8 +68,9 @@ GetOptions(
 
 usage() if ( !@ARGV );
 usage("output must be specified") if ( !$opts{output} );
-usage("must specify either --var-code or --var-literal") if ( !$opts{var_code} && !$opts{var_literal});
 usage("cannot specify both --var-code and --var-literal") if ( $opts{var_code} && $opts{var_literal});
+
+$opts{sort} //= 'reactance[0]';
 
 my $octo;
 my %octo_filter;
@@ -86,12 +91,6 @@ if ($opts{octopart})
 		);
 }
 
-# $opts{sort} should be removed someday, this was for the old multi-var feature.
-$opts{sort} //= $opts{var_code};
-$opts{sort} //= $opts{var_literal};
-$opts{sort} =~ s/[=,].*$//;
-
-
 my @all_components;
 
 my $count = 0;
@@ -104,6 +103,8 @@ foreach my $file (@ARGV)
 	@v{'value_unit', 'value_code_regex'} = split(/[=]/, $opts{var_code}) if ($opts{var_code});
 	@v{'value_unit', 'value_literal_regex'} = split(/[=]/, $opts{var_literal}) if ($opts{var_literal});
 	$v{filename} = $file;
+
+	$opts{var_name} //= $v{value_unit};
 
 	my $comp = eval { RF::Component->load($file, %v) };
 	warn $@ if !$comp;
@@ -126,29 +127,32 @@ foreach my $c (@all_components)
 
 	my $stock = get_stock($c);
 	my $model = $c->model;
-	my $val = $c->value;
-	my $var = $c->value_unit;
+	my $val = var_eval_func($c, $opts{sort});
+	my $var_format = var_format($c);
 
 	# Perl will evaluate this nonzero-length string as "true", below.
 	$stock //= 'unknown';
 
 	if ($stock)
 	{
-		# skip to the next file if already seen:
-		next if ($opts{unique} && $seen{$val});
+		if ($val)
+		{
+			# skip to the next file if already seen:
+			next if ($opts{unique} && $seen{$val});
 
-		$seen{$val}++;
+			$seen{$val}++;
+		}
 
 		if ($opts{verbose} >= 2)
 		{
-			print STDERR colored(['green bold'], "$model ($var=$val): $stock in stock\n")
+			print STDERR colored(['green bold'], "$model ($var_format): $stock in stock\n")
 		}
 
 		push @available_components, $c;
 	}
 	elsif ($opts{verbose} >= 3)
 	{
-		print STDERR colored(['red bold'], "$model ($var=$val): $stock in stock\n");
+		print STDERR colored(['red bold'], "$model ($var_format): $stock in stock\n");
 	}
 }
 
@@ -166,7 +170,11 @@ my $idx = 0;
 my %seller_counts;
 my %part_models;
 
-my @sorted_components = sort { $a->value <=> $b->value } @available_components;
+use PDL;
+my @sorted_components =
+	sort { var_eval_func($a, $opts{sort}) <=> var_eval_func($b, $opts{sort}) }
+		@available_components;
+
 @sorted_components = reverse @sorted_components if ($opts{reverse_sort});
 
 # Save in magnitude-angle format, but only so `diff` shows me how well the output works.
@@ -174,13 +182,7 @@ my @sorted_components = sort { $a->value <=> $b->value } @available_components;
 my $mdf = RF::Component::Multi->new(@sorted_components);
 $mdf->save($opts{output}, save_options => {format => 'MA'}, vars =>
 	{
-		component => sub {
-			our $i //= 0;
-			my $c = shift;
-			my $t = "$i. $c->{value} $c->{value_unit} $c->{model}";
-			$i++;
-			return $t;
-		}
+		($opts{var_name} // 'component') => sub { our $i //= 0; var_format(shift, idx => $i++) }
 	});
 
 if ($opts{verbose} >= 1)
@@ -389,4 +391,88 @@ sub get_stock
 	}
 
 	return $stock;
+}
+
+# Convert formatted strings like {reactance} or {srf/1e6} to values.  For example:
+#    '{idx}. {value}{value_unit} X={reactance[0]} SRF={srf/1e9}GHz {model}'
+# becomes
+#    '0. 1pF X=-2209.80792664007 SRF=?GHz GRM1555C1H1R0WA01'
+sub var_format
+{
+	my ($c, %vars) = @_;
+	my $f = $opts{var_format};
+
+	while ($f =~ /\{([^}]+)\}/g)
+	{
+		my $func = $1;
+
+		my $value = var_eval_func($c, $func, %vars);
+
+		$f =~ s/\{\Q$func\E\}/$value/g;
+	}
+
+	# Collapse multiple whitespaces to a single space:
+	$f =~ s/\s+/ /g;
+
+	return $f;
+}
+
+sub var_eval_func
+{
+	my ($c, $func, %vars) = @_;
+
+	our $N //= qr/([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)/;
+
+	# idx is always defined.
+	$vars{idx} //= '?';
+
+	my $c2 = $c->at($opts{freqs});
+
+	my ($format_spec, $func_op);
+	$func =~ s/\s+//g;
+	if ($func =~ /^(%[^:]+:)?(\w+)(.*$)/ && length($2))
+	{
+		($format_spec, $func, $func_op) = ($1, $2, $3);
+		$format_spec =~ s/:// if $format_spec;
+		$func_op //= '';
+	}
+
+	my $value;
+	if (defined $vars{$func})
+	{
+		$value = $vars{$func};
+	}
+	else
+	{
+		$value = $c2->$func;
+	}
+
+	# Couldn't find it, return '?'
+	return '?' if (!defined($value));
+
+	if (ref($value) eq 'PDL')
+	{
+		# Get the index if they asked for one:
+		if ($func_op =~ /\[(\d+)\]/)
+		{
+			$value = $value->slice($1);
+		}
+		else
+		{
+			# Get an average if >1 element:
+			$value = $value->sum / $value->nelem if $value->nelem > 1;
+		}
+
+		$value = $value->sclr;
+	}
+
+	$value /= $1 if ($func_op =~ m!\/($N)!);
+	$value *= $1 if ($func_op =~ m!\*($N)!);
+
+	if ($format_spec)
+	{
+		$value = sprintf($format_spec, $value);
+	}
+
+	return $value;
 }
