@@ -45,6 +45,8 @@ $opts{verbose} = 0;
 $opts{unique} = 1;
 $opts{octopart_show_stock} = 0;
 
+my %octo_opts;
+
 GetOptions(
 	"var-code|V=s"		=> \$opts{var_code},
 	"var-literal|L=s"	=> \$opts{var_literal},
@@ -62,8 +64,13 @@ GetOptions(
 	"model-suffix|m=s"	=> \$opts{model_suffix},
 	"octopart|O"		=> \$opts{octopart},
 	"octopart-filter|F=s"	=> \$opts{octopart_filter},
-	"octopart-include-specs|I" => \$opts{octopart_specs},
 	"octopart-show-stock|S"	=> sub{ $opts{octopart_show_stock}++ },
+
+	"octopart-cache-age=s"	=> \$octo_opts{cache_age},
+	"octopart-include-specs|I" => \$octo_opts{include_specs},
+	"octopart-query-limit=s"=> \$octo_opts{query_limit},
+	"octopart-debug-ua"	=> \$octo_opts{ua_debug},
+	"octopart-debug-json"	=> \$octo_opts{json_debug},
 ) or usage();
 
 usage() if ( !@ARGV );
@@ -86,8 +93,7 @@ if ($opts{octopart})
 	$octo = API::Octopart->new(
 		token => (sub { my $t = `cat ~/.octopart/token`; chomp $t; return $t})->(),
 		cache => "$ENV{HOME}/.octopart/cache",
-		include_specs => $opts{octopart_specs},
-		ua_debug => 0,
+		%octo_opts
 		);
 }
 
@@ -125,13 +131,22 @@ foreach my $c (@all_components)
 {
 	my %vars;
 
-	my $stock = get_stock($c);
 	my $model = $c->model;
 	my $val = var_eval_func($c, $opts{sort});
 	my $var_format = var_format($c);
 
-	# Perl will evaluate this nonzero-length string as "true", below.
+	my $stock;
+	if (!$seen{$val})
+	{
+		$stock = get_stock($c);
+	}
+
+	# Below, Perl will evaluate 'unknown', a nonzero-length string, as "true".
+	# Also it pretty-prints.
 	$stock //= 'unknown';
+
+	my $api_count = 0;
+	$api_count = $octo->octo_query_count() if $opts{octopart};
 
 	if ($stock)
 	{
@@ -145,14 +160,14 @@ foreach my $c (@all_components)
 
 		if ($opts{verbose} >= 2)
 		{
-			print STDERR colored(['green bold'], "$model ($var_format): $stock in stock\n")
+			print STDERR colored(['green bold'], "$model ($var_format): $stock in stock ($api_count API calls)\n")
 		}
 
 		push @available_components, $c;
 	}
 	elsif ($opts{verbose} >= 3)
 	{
-		print STDERR colored(['red bold'], "$model ($var_format): $stock in stock\n");
+		print STDERR colored(['red bold'], "$model ($var_format): $stock in stock ($api_count API calls)\n");
 	}
 }
 
@@ -300,9 +315,14 @@ Note that regular expressions matching filenames are always case-insensitive:
 
 	Get your API token here: https://octopart.com/api
 
+--octopart-cache-age <days>  Cache results for N days.
+	Default is 30 days per API::Octopart.
+
 --octopart-filter|-F <filter_opts>    This option implies -O.
 	The <filter_opts> are comma-separated values passed to the
-	API::Octopart class.  These are common filter options to remember:
+	API::Octopart class. You can get a JSON dump of values by setting
+	verbose to at least 4 (-vvvv). These are common filter options to
+	remember:
 
 		min_qty=<n>    - Minimum stock quantity, per vendor.
 
@@ -335,6 +355,10 @@ Note that regular expressions matching filenames are always case-insensitive:
 	Calling this option more than once increases the stock detail.  A
 	single -S shows final summary and two -SS shows per-product per-seller
 	stock detail.
+
+--octopart-debug            Enable Octopart user agent debugging (LWP::UserAgent)
+
+--octopart-query-limit <n>  Limit the number of request to N
 
 --limit|-l    <N>           Limit number of file evaluations to N.
 	This is useful for debugging your regex with -vvv.  Glob all the files
