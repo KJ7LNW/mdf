@@ -255,12 +255,22 @@ sub usage
 	my $err = shift;
 	croak colored [ qw/red bold/], "$err" if $err;
 
-	print "usage: $0 [options] --var-code 'var_name=MODEL-(...)\.s2p' file1.s2p [file2...] -o mymdf.mdf
+	print qq{usage: $0 [options] --var-code 'var_name=MODEL-(...)\.s2p' file1.s2p [file2...] -o mymdf.mdf
 
 --output|-o      <file>        Output filename, required.
 	If the filename is '-' then output will be written to stdout
 
 Note that regular expressions matching filenames are always case-insensitive:
+
+--verbose|-v                Multiple -v's increase verbosity.
+	At least 4x -v's will print detailed Octopart responses.
+
+--quiet|-q                  Suppress warnings, but does not suppress verbosity.
+
+--limit|-l    <N>           Limit number of file evaluations to N.
+	This is useful for debugging your regex with -vvv.  Glob all the files
+	you want but limit to N so you only make a few Octopart queries while
+	testing.
 
 --var-code|-V    <regex>       Either of --var-code or --var-literal are required.
 	Specifies the variable to be assigned and a regular expression to match
@@ -274,20 +284,115 @@ Note that regular expressions matching filenames are always case-insensitive:
 	The (...) below must match the code or literal to be placed in the MDF
 	variable. Example:
 		--var-code 'C_pF=MODEL-(...)\.s2p'
-	
+
 --var-literal|-L <regex>       Either of --var-code or --var-literal are required.
 	The var-literal version is the same as --var-code but does not
 	calcualte the code, it takes the value verbatim.  For example, some
 	inductors specify the number of turns in their s2p filename:
 		--var-literal 'L_turns=MODEL-([0-9]+)T\.s2p'
 
+--var-name <name>              The name of the variable used in the MDF
+	If not specified, <name> defaults to "component", so something like
+	this is placed in each MDF segment:
+
+		VAR component="1. GRM1234 ..."
+
+--freqs <freq_format>          Interpolate input files to specific frequency(ies) 
+
+	If you omit this option then all original frequencies from the
+	provided .s2p file will be included in the output.  Depending on
+	your use case you may wish to normalize frequencies or reduce
+	the number of entries to keep the size down.
+
+	Examples:
+		144e6-148e6x50 # 50 samples from 144 to 148 MHz
+		420e6-450e6x31 # 50 samples from 420 to 450 MHz
+		144e6-148e6x50,420e6-450e6x31 # combined
+
+	See see RF::Component->at() and PDL::IO::Touchstone::m_interpolate()
+
+--sort <var_format>            Sort MDF records in this format
+	See --mdif-var-format (below).
+
+	You can specify any variable format in --sort, just omit {}. For example:
+	        --sort value
+	or
+	        --sort 'reactance[0]'
+
+	Default: sort by 'reactance[0]'.
+
 --reverse-sort|-r              Sort MDF values in reverse.
+
+--srf-limit <hz>            Exclude parts with an SRF below <hz>
+	If a part has a self-resonant frequency (SRF) below the specified
+	freqency then it will be excluded from the MDF.  SRF is the point where
+	reactance switches for signs.  This is the frequency at which
+	capacitors become inductive and vice-versa.  The SRF curve tends to be
+	asymptotic so values near SRF are likely problematic as well. Thus, it
+	is a good idea to choose components that have an SRF that is well above
+	the design frequency.
+
+	For example:
+		--srf-limit 1e9 # exclude SRF below 1GHz.
+
+	Notes: 
+	  1. If the component exhibits no SRF behavior (no reactance inflection)
+	     then it will be included and SRF will print as a '?' symbol.
+	  2. SRF values are evaluated before frequency interpolation.
+
+--mdif-var-format <var_format> The text format of the MDF variable
+	The MDIF format supports variable definitions for selecting a component in your
+	EDA software.  At the moment only a single variable will be emitted, for
+	example:
+
+	        VAR pF=100
+
+	To accomplish this would would write a --mdif-var-format as follows:
+
+	        --var-name pF --mdif-var-format '{capacitance}'
+
+	The syntax for the variable format is as follows:
+
+	        {[format-specifier:]function[operator]}
+
+	* format-specifier: If a printf format specifier is used then it will be passed
+	  through `sprintf`.  For example, %.2f will limit value to 2 decimal points.
+	  For example: {%.2f:capacitance}
+
+	* function may be one of:
+	   1. any function provided by RF::Component
+	   2. or "idx" which will be incremented when writing to the MDIF file.
+
+	Note that if `function` returns a PDL with more than one value then it will
+	be averaged using an arithmetic mean.  If you want a specific index then see
+	the [N] operator.
+
+	* operator may be one of:
+	        1. [N]: The Nth index into a PDL slice.  Negative numbers count from the end.
+	        2. /N : divide by N
+	        3. *N : multiply by N.
+	  where N can be any floating point value
+
+	Example 1: First SRF value
+	        {idx}. {value}{value_unit} X={%.2f:reactance[0]} {model} SRF={%.2f:srf/1e9}GHz
+
+	        VAR pF="0. 1.1pF X=-2893.38 GRM1555C1H1R1WA01 SRF=7.74GHz
+	        VAR pF="1. 1.2pF X=-2652.23 GRM1555C1H1R2WA01 SRF=7.51GHz
+	        VAR pF="2. 1.3pF X=-2448.19 GRM1555C1H1R3WA01 SRF=7.28GHz
+
+	Example 2: min/max frequency range provided by the component:
+	        {idx}. {value}{value_unit} {model} ({%.2f:freqs[0]/1e6}-{%.2f:freqs[-1]/1e6} MHz)
+
+	        VAR pF="0. 1pF GRM1555C1H1R0WA01 (100.00-10050.00 MHz)"
+	        VAR pF="1. 1.1pF GRM1555C1H1R1WA01 (100.00-4300.00 MHz)"
+	        VAR pF="2. 1.2pF GRM1555C1H1R2WA01 (100.00-4300.00 MHz)"
 
 --not-unique|-U                Make values NOT unique
 --unique|-u                    Make values unique (default)
-	Choose only the first matching code if multiple of the same code are
-	found.  Note that file ordering may be relevant when using the --unique
-	constraint:
+	Choose only the first matching sort-order value.  For example, if you specify:
+		--sort 'reactance[0]'
+	then additional parts with the same reactance value will be omitted;
+	only the first component with the same reactance will be included. 
 
 	If you wish to prioritize the tolerance code (or other coded metric)
 	then order the file list in tolerance order.  So long as the names are
@@ -319,23 +424,6 @@ Note that regular expressions matching filenames are always case-insensitive:
 	which is a 5% tolerance.
 
 	This string is also added to the VAR line in the .mdf.
-
---srf-limit <hz>            Exclude parts with an SRF below <hz>
-	If a part has a self-resonant frequency (SRF) below the specified
-	freqency then it will be excluded from the MDF.  SRF is the point where
-	reactance switches for signs.  This is the frequency at which
-	capacitors become inductive and vice-versa.  The SRF curve tends to be
-	asymptotic so values near SRF are likely problematic as well. Thus, it
-	is a good idea to choose components that have an SRF that is well above
-	the design frequency.
-
-	For example:
-		--srf-limit 1e9 # exclude SRF below 1GHz.
-
-	Notes: 
-	  1. If the component exhibits no SRF behavior (no reactance inflection)
-	     then it will be included and SRF will print as a '?' symbol.
-	  2. SRF values are evaluated before frequency interpolation.
 
 --octopart|-O               Enable Octopart stock querying
 	You will need to place your API token in ~/.octopart/token .  Queries are
@@ -389,17 +477,7 @@ Note that regular expressions matching filenames are always case-insensitive:
 --octopart-debug            Enable Octopart user agent debugging (LWP::UserAgent)
 
 --octopart-query-limit <n>  Limit the number of request to N
-
---limit|-l    <N>           Limit number of file evaluations to N.
-	This is useful for debugging your regex with -vvv.  Glob all the files
-	you want but limit to N so you only make a few Octopart queries while
-	testing.
-
---verbose|-v                Multiple -v's increase verbosity.
-	At least 4x -v's will print detailed Octopart responses.
-
---quiet|-q                  Suppress warnings, but does not suppress verbosity.
-\n";
+\n};
 
 
 	exit 1;
@@ -507,7 +585,7 @@ sub var_eval_func
 		@values = $c_interpolated->$func;
 	}
 
-	my $value = @values[0];
+	my $value = $values[0];
 
 	# Couldn't find it, return '?'
 	return '?' if (!defined($value));
